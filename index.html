@@ -82,7 +82,7 @@
 <section id="view-login" class="min-h-screen flex flex-col items-center justify-center px-6 py-10">
   <div class="w-full max-w-sm fade-in">
     <div id="loginLogo" class="flex justify-center mb-3"></div>
-    <p class="text-center text-golddim text-sm tracking-[0.4em] uppercase pl-[0.4em]">Server Training</p>
+    <p class="text-center text-golddim text-sm tracking-[0.4em] uppercase pl-[0.4em]">Training</p>
 
     <form id="loginForm" class="mt-8 space-y-4">
       <div>
@@ -178,6 +178,7 @@ const API_URL = "https://script.google.com/macros/s/AKfycbzMGYNCHmlP6s9mXKuEHEeI
 
 // ---- Tunable settings -----------------------------------------------------
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
+const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
 const ALLERGEN_QUESTIONS = 15;   // Allergen Awareness question count
 const PASS_DEFAULT       = 80;   // standard pass %
@@ -388,6 +389,7 @@ async function handleLogin(e){
     if(!r.ok){ hideLoader(); return loginError(r.error || 'Name or PIN not recognized. See your manager.'); }
 
     S.user = r.user;
+    S.pin = pin;                 // kept in memory only (never stored) — authorizes manager actions
     S.results = r.results || [];
 
     // Load the menu if we don't have it yet
@@ -421,9 +423,25 @@ function enterApp(){
 }
 
 function logout(){
-  if(S.testActive){ /* nav locked; ignore */ return; }
-  S.user = null; S.results = [];
+  // Log out is always allowed. If a test is in progress, leaving it counts as
+  // abandoning the test — record it before exiting.
+  if(S.testActive && S.test){
+    const t = S.test;
+    try {
+      apiPost({ action:'logAbandon',
+        first:S.user.first_name, last:S.user.last_name,
+        test_section:t.section, test_level:t.level,
+        timestamp_started: new Date(t.started).toISOString(),
+        questions_completed: t.idx, total_questions: t.questions.length });
+    } catch(e){}
+    clearAbandonFlag();
+  }
+  S.testActive = false;
+  S.test = null;
+  S.user = null; S.pin = null; S.results = []; S.managerData = null;
+  progressView = 'me';
   S.study = { section:'All Items', itemId:null, showDetailMobile:false };
+  applyNavLockStyles();
   $('loginForm').reset();
   hide($('view-main'));
   show($('view-login'));
@@ -494,8 +512,8 @@ function selectSection(sec){
 }
 
 function sectionItems(sec){
-  if(sec === 'All Items') return S.menu;
-  return S.menu.filter(it => it.section === sec);
+  const items = (sec === 'All Items') ? S.menu.slice() : S.menu.filter(it => it.section === sec);
+  return items.sort((a,b) => a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase()));
 }
 
 function renderStudyBody(){
@@ -562,9 +580,11 @@ function renderItemDetail(id){
   const catLabel = (it.section + (it.wrapper && it.wrapper.toLowerCase() !== 'none' ? ' · ' + it.wrapper : '')).toUpperCase();
   const chips = it.ingredients.map(i => `<span class="inline-block bg-chip border border-line rounded-full px-3 py-1 text-sm text-text mr-2 mb-2">${esc(i)}</span>`).join('');
 
+  // Show the photo only when one exists. No "coming soon" placeholder — the
+  // title stands on its own. If a set photo URL fails to load, drop it cleanly.
   const photo = it.photo_url
-    ? `<img src="${esc(it.photo_url)}" alt="${esc(it.item_name)}" class="w-full h-52 object-cover rounded-lg border border-line" onerror="this.replaceWith(photoPlaceholderEl())"/>`
-    : photoPlaceholder();
+    ? `<img src="${esc(it.photo_url)}" alt="${esc(it.item_name)}" class="w-full h-52 object-cover rounded-lg border border-line" onerror="this.closest('[data-photo]').remove()"/>`
+    : '';
 
   const sell = it.sell_description
     ? `<div class="border-l-2 border-gold pl-4 py-1">
@@ -587,7 +607,7 @@ function renderItemDetail(id){
       ${it.price!=='' ? `<span class="flex-shrink-0 border border-gold text-gold rounded-md px-2.5 py-1 text-sm font-semibold">${fmtPrice(it.price)}</span>`:''}
     </div>
 
-    <div class="mt-4">${photo}</div>
+    ${photo ? `<div class="mt-4" data-photo>${photo}</div>` : ''}
 
     <hr class="border-line my-5"/>
 
@@ -861,12 +881,23 @@ function beginTestAfterModal(){
   renderQuestion();
 }
 
+// Builds a Level-2 word bank: the item's true ingredients plus filler
+// ingredients pulled from elsewhere on the menu, capped at WORDBANK_SIZE,
+// then sorted alphabetically.
+function buildWordBank(correct){
+  const correctLower = new Set(correct.map(s => s.toLowerCase()));
+  const need = Math.max(0, WORDBANK_SIZE - correct.length);
+  const pool = S.allIngredients.filter(ing => !correctLower.has(ing.toLowerCase()));
+  const bank = correct.concat(sample(pool, need));
+  return bank.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+}
+
 function buildQuestions(track, level){
   if(track.type === 'roll'){
     let items = (track.section === '*ALL*') ? S.menu.slice() : S.menu.filter(it => it.section === track.section);
     items = shuffle(items).slice(0, MAX_ROLL_QUESTIONS);
     if(level === 2){
-      return items.map(it => ({ type:'wordbank', item:it, correct: it.ingredients.slice() }));
+      return items.map(it => { const correct = it.ingredients.slice(); return { type:'wordbank', item:it, correct, bank: buildWordBank(correct) }; });
     }
     return items.map(it => { const q = buildSelectAll(it); return { type:'selectAll', item:it, options:q.options, correct:q.correct }; });
   }
@@ -983,7 +1014,7 @@ function renderWordBank(q){
   const it = q.item;
   const photo = it.photo_url ? `<img src="${esc(it.photo_url)}" class="w-full h-40 object-cover rounded-lg border border-line mb-3" onerror="this.remove()"/>` : '';
   const slots = q.correct.map((_,i) => `<div data-slot="${i}" onclick="wbClearSlot(${i})" class="wbSlot min-h-[42px] rounded-lg border border-dashed border-line bg-bg flex items-center justify-center px-2 text-sm text-muted"></div>`).join('');
-  const bank = S.allIngredients.map(ing => `<button data-ing="${esc(ing)}" onclick="wbPlace(this)" class="wbChip bg-chip border border-line rounded-full px-3 py-1.5 text-sm text-text mr-1.5 mb-1.5">${esc(ing)}</button>`).join('');
+  const bank = q.bank.map(ing => `<button data-ing="${esc(ing)}" onclick="wbPlace(this)" class="wbChip bg-chip border border-line rounded-full px-3 py-1.5 text-sm text-text mr-1.5 mb-1.5">${esc(ing)}</button>`).join('');
   return `
     ${photo}
     <p class="text-xs uppercase tracking-wider text-golddim">${esc(it.section)}</p>
@@ -1166,13 +1197,13 @@ async function finishTest(){
       </div>
       ${msg}
       ${missedHtml}
-      <button onclick="returnToMenu()" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Return to Menu</button>
+      <button onclick="returnToMenu()" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">View My Progress →</button>
     </div>`;
   S.test = null;
 }
 
-// "Return to Menu" logs out (shared-tablet behavior)
-function returnToMenu(){ logout(); }
+// After finishing a test, send the user straight to their Progress tab (still logged in).
+function returnToMenu(){ progressView = 'me'; switchTab('progress'); }
 
 // Study link from the score screen — keeps the user logged in
 function openStudyItem(itemId){
@@ -1187,10 +1218,11 @@ function openStudyItem(itemId){
 /* ===========================================================================
    PROGRESS TAB
 =========================================================================== */
-let progressView = 'me';  // 'me' | 'leaderboard'
+let progressView = 'me';  // 'me' | 'leaderboard' | 'manager'
 
 function renderProgress(){
   if(progressView === 'leaderboard') return renderLeaderboard();
+  if(progressView === 'manager')     return renderManager();
   const pane = $('tab-progress');
   const res = S.results.slice();
 
@@ -1249,7 +1281,10 @@ function renderProgress(){
         <h2 class="font-display text-2xl text-text">Welcome back, ${esc(S.user.first_name)}</h2>
         <p class="text-xs text-muted mt-0.5">Last test taken: ${fmtDate(lastTaken)} · Last test passed: ${fmtDate(lastPassed)}</p>
       </div>
-      <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">Leaderboard</button>
+      <div class="flex gap-2">
+        <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">Leaderboard</button>
+        ${isManager() ? `<button onclick="showManager()" class="text-xs border border-gold bg-gold/10 text-gold rounded-lg px-3 py-2 font-semibold">Manager</button>` : ''}
+      </div>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -1281,6 +1316,166 @@ function renderProgress(){
 }
 
 function toggleLeaderboard(){ progressView = progressView==='me' ? 'leaderboard' : 'me'; renderProgress(); }
+
+/* ===========================================================================
+   MANAGER VIEW  (only for staff whose role is "Manager")
+=========================================================================== */
+function isManager(){ return !!(S.user && String(S.user.role||'').toLowerCase()==='manager'); }
+function showManager(){ progressView = 'manager'; renderProgress(); }
+
+async function renderManager(){
+  const pane = $('tab-progress');
+  pane.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-display text-2xl text-text">Manager</h2>
+      <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">My Progress</button>
+    </div>
+    <div id="mgrBody"><p class="text-muted text-sm">Loading team data…</p></div>`;
+  try {
+    const r = await apiPost({ action:'managerData', first:S.user.first_name, last:S.user.last_name, pin:S.pin });
+    if(!r.ok){ $('mgrBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load manager data.')}</p>`; return; }
+    S.managerData = r;
+    drawManager(r);
+  } catch(e){
+    $('mgrBody').innerHTML = `<p class="text-fail text-sm">Couldn't load team data. Check your connection.</p>`;
+  }
+}
+
+function drawManager(d){
+  const staff = d.staff||[], results = d.results||[], abandoned = d.abandoned||[];
+
+  // Aggregate every staff member's results
+  const agg = {};
+  results.forEach(x => {
+    const name = (x.first_name+' '+x.last_name).trim();
+    if(!agg[name]) agg[name] = { tests:0, sum:0, pass:0, last:null };
+    agg[name].tests++; agg[name].sum += Number(x.score_percent||0);
+    if(String(x.pass_fail).toUpperCase()==='PASS') agg[name].pass++;
+    const dt = x.date_taken ? new Date(x.date_taken) : null;
+    if(dt && (!agg[name].last || dt>agg[name].last)) agg[name].last = dt;
+  });
+
+  const dashRows = staff.map(s => {
+    const name = (s.first_name+' '+s.last_name).trim();
+    const a = agg[name] || { tests:0, sum:0, pass:0, last:null };
+    const avg = a.tests ? Math.round(a.sum/a.tests) : 0;
+    return `<tr class="border-b border-line">
+      <td class="py-2 pr-2 text-text">${esc(name)}</td>
+      <td class="py-2 pr-2 text-muted">${esc(s.role||'')}</td>
+      <td class="py-2 pr-2 text-muted">${a.tests}</td>
+      <td class="py-2 pr-2 text-text">${a.tests?avg+'%':'—'}</td>
+      <td class="py-2 pr-2 text-muted">${a.tests?(a.pass+'/'+a.tests):'—'}</td>
+      <td class="py-2 text-muted whitespace-nowrap">${a.last?fmtDate(a.last.toISOString()):'—'}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="6" class="py-3 text-muted text-sm">No staff yet.</td></tr>`;
+
+  const abRows = abandoned.slice()
+    .sort((x,y)=> new Date(y.timestamp_abandoned)-new Date(x.timestamp_abandoned))
+    .map(x => `<tr class="border-b border-line">
+      <td class="py-2 pr-2 text-text">${esc((x.first_name+' '+x.last_name).trim())}</td>
+      <td class="py-2 pr-2 text-muted">${esc(x.test_section)}${x.test_level?(' · L'+x.test_level):''}</td>
+      <td class="py-2 pr-2 text-muted">${x.questions_completed}/${x.total_questions}</td>
+      <td class="py-2 text-muted whitespace-nowrap">${fmtDate(x.timestamp_abandoned)}</td>
+    </tr>`).join('') || `<tr><td colspan="4" class="py-3 text-muted text-sm">No abandoned tests. 👍</td></tr>`;
+
+  const roster = staff.map((s,i) => {
+    const name = (s.first_name+' '+s.last_name).trim();
+    return `<div class="bg-surface border border-line rounded-lg p-3 flex flex-wrap items-center gap-2">
+      <div class="flex-1 min-w-[110px]">
+        <p class="text-sm text-text">${esc(name)}</p>
+        <p class="text-[11px] text-muted">Added ${fmtDate(s.date_added)}</p>
+      </div>
+      <select id="role_${i}" class="bg-bg border border-line rounded px-2 py-1.5 text-xs text-text">
+        ${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}
+      </select>
+      <input id="pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1.5 text-xs text-text tracking-widest" />
+      <button onclick="mgrSaveStaff(${i})" class="text-xs bg-gold text-bg rounded px-3 py-1.5 font-semibold">Save</button>
+      <button onclick="mgrRemoveStaff(${i})" class="text-xs border border-fail text-fail rounded px-3 py-1.5">Remove</button>
+    </div>`;
+  }).join('');
+
+  $('mgrBody').innerHTML = `
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Team Dashboard</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Role</th><th class="pb-2 pr-2 font-medium">Tests</th><th class="pb-2 pr-2 font-medium">Avg</th><th class="pb-2 pr-2 font-medium">Passed</th><th class="pb-2 font-medium">Last Active</th>
+        </tr></thead><tbody>${dashRows}</tbody>
+      </table>
+    </div>
+
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Abandoned Tests</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Test</th><th class="pb-2 pr-2 font-medium">Done</th><th class="pb-2 font-medium">When</th>
+        </tr></thead><tbody>${abRows}</tbody>
+      </table>
+    </div>
+
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Manage Team</h3>
+    <div class="bg-surface border border-gold rounded-xl p-4 mb-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-2">Add Team Member</p>
+      <div class="grid grid-cols-2 gap-2">
+        <input id="add_first" placeholder="First name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
+        <input id="add_last" placeholder="Last name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
+        <select id="add_role" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text">
+          <option>Server</option><option>Bartender</option><option>Manager</option>
+        </select>
+        <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
+      </div>
+      <p id="mgrMsg" class="text-xs mt-2"></p>
+      <button onclick="mgrAddStaff()" class="mt-2 w-full bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Add Team Member</button>
+    </div>
+    <div class="space-y-2">${roster}</div>`;
+}
+
+function mgrMsg(msg, ok){
+  const el = $('mgrMsg'); if(!el) return;
+  el.textContent = msg; el.className = 'text-xs mt-2 ' + (ok?'text-pass':'text-fail');
+}
+
+async function mgrAddStaff(){
+  const first=$('add_first').value.trim(), last=$('add_last').value.trim(), role=$('add_role').value, pin=$('add_pin').value.trim();
+  if(!first||!last||!pin) return mgrMsg('First name, last name, and PIN are required.', false);
+  if(!/^\d{4}$/.test(pin)) return mgrMsg('PIN must be exactly 4 digits.', false);
+  showLoader('Adding team member…');
+  try {
+    const r = await apiPost({ action:'addStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
+      new_first:first, new_last:last, new_role:role, new_pin:pin });
+    hideLoader();
+    if(!r.ok) return mgrMsg(r.error||'Could not add team member.', false);
+    renderManager();
+  } catch(e){ hideLoader(); mgrMsg('Connection error. Try again.', false); }
+}
+
+async function mgrSaveStaff(i){
+  const s = (S.managerData.staff||[])[i]; if(!s) return;
+  const role = $('role_'+i).value, pin = $('pin_'+i).value.trim();
+  if(pin && !/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
+  showLoader('Saving…');
+  try {
+    const r = await apiPost({ action:'updateStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
+      target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin });
+    hideLoader();
+    if(!r.ok){ alert(r.error||'Could not save.'); return; }
+    renderManager();
+  } catch(e){ hideLoader(); alert('Connection error. Try again.'); }
+}
+
+async function mgrRemoveStaff(i){
+  const s = (S.managerData.staff||[])[i]; if(!s) return;
+  const name = (s.first_name+' '+s.last_name).trim();
+  if(!confirm('Remove '+name+"? This deletes their login. Their past test results stay in the sheet.")) return;
+  showLoader('Removing…');
+  try {
+    const r = await apiPost({ action:'removeStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
+      target_first:s.first_name, target_last:s.last_name });
+    hideLoader();
+    if(!r.ok){ alert(r.error||'Could not remove.'); return; }
+    renderManager();
+  } catch(e){ hideLoader(); alert('Connection error. Try again.'); }
+}
 
 async function renderLeaderboard(){
   const pane = $('tab-progress');

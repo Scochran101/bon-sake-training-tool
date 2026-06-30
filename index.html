@@ -202,20 +202,48 @@ const S = {
 
 // ---- The 14 "Know the Menu" flashcards (hardcoded per brief) --------------
 const FLASHCARDS = [
-  { term:'NIGIRI',            def:'Fresh raw fish served over a small hand-pressed ball of seasoned rice. Ordered by the piece (2pc unless noted). The fish is the star — the rice is just the vehicle.' },
-  { term:'SASHIMI',           def:'Fresh raw fish served alone — no rice, no roll. Thin sliced, pure protein. For the guest who wants the cleanest expression of the fish.' },
-  { term:'HOSOMAKI',          def:'A thin roll with seaweed (nori) on the outside. Usually one or two ingredients. Simple, traditional. The seaweed wrapper is visible and intentional.' },
-  { term:'URAMAKI',           def:'A roll with rice on the outside and seaweed on the inside. Most American-style rolls are uramaki. The rice is what you see first.' },
-  { term:'TEMAKI',            def:'A hand roll — seaweed cone shape, filled with ingredients. Not cut into pieces. Meant to be eaten immediately before the seaweed gets soft.' },
-  { term:'SIGNATURE MAKI',    def:"Bon Sake's house specialty rolls. Larger, more complex builds with premium ingredients. These are the high-ticket items — know every component cold." },
-  { term:'SIGNATURE SASHIMI', def:'Premium raw fish preparations with house-made sauces and garnishes. Not your standard sashimi — these are plated dishes with layered flavors.' },
-  { term:'SIGNATURE NIGIRI',  def:"One piece per order. Bon Sake's elevated take on traditional nigiri — house sauces, special preparations, premium toppings. Priced per piece." },
-  { term:'SOY PAPER',         def:'A thin sheet made from soy, used instead of nori (seaweed) on many Signature Maki rolls. Lighter flavor, slightly sweet. There is a $1.75 upcharge for soy paper — know this when guests ask.' },
-  { term:'PONZU',             def:'A citrus-based soy sauce — lighter and more acidic than regular soy. Used frequently across the menu as a finishing sauce or dipping component.' },
-  { term:'YUZU KOSHU',        def:'A Japanese condiment made from yuzu citrus peel, chili, and salt. Bright, spicy, aromatic. Appears in several dishes — it adds heat and citrus simultaneously.' },
-  { term:'TOBIKO',            def:'Flying fish roe — small, crunchy, briny fish eggs used as a topping. Comes in varieties: regular (orange), habanero (red/spicy), wasabi (green). Know which roll uses which.' },
-  { term:'FOIE GRAS',         def:'Seared duck liver — rich, buttery, luxurious. Appears in several premium items including the Bimini Bay, High Roller, and Foie Gras nigiri. It is a significant upsell ingredient. Mention it when describing those dishes.' },
-  { term:'DASHI',             def:'A Japanese cooking stock made from kombu seaweed and dried fish. The base of many broths and sauces at Bon Sake. Subtle, savory, umami-forward.' }
+  { term:'NIGIRI',
+    def:'Fresh raw fish served over a small hand-pressed ball of seasoned rice. Ordered by the piece (2pc unless noted). The fish is the star — the rice is just the vehicle.',
+    fact:'Nigiri means "to grip" in Japanese — it is named for the way the chef hand-presses each piece, and it began as fast street food in 1800s Tokyo, eaten with the fingers.' },
+  { term:'SASHIMI',
+    def:'Fresh raw fish served alone — no rice, no roll. Thin sliced, pure protein. For the guest who wants the cleanest expression of the fish.',
+    fact:'Sashimi means "pierced body." One theory says chefs once pinned the fish\'s own tail and fin to the slices so diners could tell which species they were eating.' },
+  { term:'HOSOMAKI',
+    def:'A thin roll with seaweed (nori) on the outside. Usually one or two ingredients. Simple, traditional. The seaweed wrapper is visible and intentional.',
+    fact:'Hosomaki literally means "thin roll." The nori goes on the outside because traditional Japanese rolls were never made rice-out — that style was invented in America.' },
+  { term:'URAMAKI',
+    def:'A roll with rice on the outside and seaweed on the inside. Most American-style rolls are uramaki. The rice is what you see first.',
+    fact:'Uramaki means "inside-out roll." It was reportedly invented in 1960s Los Angeles to hide the seaweed, which early American diners were wary of.' },
+  { term:'TEMAKI',
+    def:'A hand roll — seaweed cone shape, filled with ingredients. Not cut into pieces. Meant to be eaten immediately before the seaweed gets soft.',
+    fact:'Temaki means "hand roll." It has no fixed shape because it is meant to be eaten within minutes — wait too long and the cone of nori turns chewy instead of crisp.' },
+  { term:'SIGNATURE MAKI',
+    def:"Bon Sake's house specialty rolls. Larger, more complex builds with premium ingredients. These are the high-ticket items.",
+    fact:'The word "maki" just means "roll" — named for the makisu, the bamboo mat that has rolled everything from sushi to omelets in Japanese kitchens for centuries.' },
+  { term:'SIGNATURE SASHIMI',
+    def:'Premium raw fish preparations with house-made sauces and garnishes. Not your standard sashimi — these are plated dishes with layered flavors.',
+    fact:'Plating sashimi is its own art form in Japan called moritsuke — slices are traditionally arranged in odd numbers, since even numbers are associated with funerals.' },
+  { term:'SIGNATURE NIGIRI',
+    def:"One piece per order. Bon Sake's elevated take on traditional nigiri — house sauces, special preparations, premium toppings. Priced per piece.",
+    fact:'A skilled sushi chef presses each nigiri to a precise density — firm enough to lift in one piece, loose enough to fall apart the moment it touches your tongue.' },
+  { term:'SOY PAPER',
+    def:'A thin sheet made from soy, used instead of nori (seaweed) on many Signature Maki rolls. Lighter flavor, slightly sweet.',
+    fact:'Soy paper (mamenori) is made by pressing soybeans into thin sheets, and it comes in colors — pink, green, orange — tinted naturally by ingredients like beet and spinach.' },
+  { term:'PONZU',
+    def:'A citrus-based soy sauce — lighter and more acidic than regular soy. Used frequently across the menu as a finishing sauce or dipping component.',
+    fact:'The "pon" in ponzu comes from the Dutch word "pons," meaning a citrus punch — a trace of the Dutch traders who were Japan\'s main link to the West for over 200 years.' },
+  { term:'YUZU KOSHU',
+    def:'A Japanese condiment made from yuzu citrus peel, chili, and salt. Bright, spicy, aromatic. Appears in several dishes — it adds heat and citrus simultaneously.',
+    fact:'Yuzu kosho is fermented for days or weeks to marry the citrus, chili, and salt — and despite "kosho" usually meaning pepper, it contains no black pepper at all.' },
+  { term:'TOBIKO',
+    def:'Flying fish roe — small, crunchy, briny fish eggs used as a topping. Comes in varieties: regular (orange), habanero (red/spicy), wasabi (green).',
+    fact:'Tobiko gets its color from what is mixed in — squid ink turns it black, wasabi turns it green, yuzu turns it pale gold — and each egg is under a millimeter across.' },
+  { term:'FOIE GRAS',
+    def:'Seared duck liver — rich, buttery, luxurious. Appears in several premium items including the Bimini Bay, High Roller, and Foie Gras nigiri.',
+    fact:'Foie gras is French for "fat liver," and the practice of fattening waterfowl for their livers dates back more than 4,000 years to ancient Egypt.' },
+  { term:'DASHI',
+    def:'A Japanese cooking stock made from kombu seaweed and dried fish. The base of many broths and sauces at Bon Sake. Subtle, savory, umami-forward.',
+    fact:'Dashi is where umami was discovered — in 1908 a Japanese chemist studying why kombu dashi tasted so savory isolated glutamate, naming the "fifth taste" and later inventing MSG.' }
 ];
 
 // ---- The 10 Upsell scenarios (hardcoded per brief) ------------------------
@@ -276,8 +304,9 @@ const TRACKS = [
   { id:'tm_sig_sash',  name:'Roll Components — Signature Sashimi',   type:'roll', section:'Signature Sashimi',  levels:true },
   { id:'tm_sig_nig',   name:'Roll Components — Signature Nigiri',    type:'roll', section:'Signature Nigiri',   levels:true },
   { id:'tm_uramaki',   name:'Roll Components — Uramaki & Temaki',    type:'roll', section:'Uramaki & Temaki',   levels:true },
-  { id:'tm_hosomaki',  name:'Roll Components — Hosomaki',            type:'roll', section:'Hosomaki',           levels:true },
-  { id:'tm_nigsash',   name:'Roll Components — Nigiri & Sashimi',    type:'roll', section:'Nigiri & Sashimi',   levels:true },
+  // Hosomaki and Nigiri & Sashimi are intentionally omitted: every dish in those
+  // sections has a single ingredient, so with the 2+-ingredient rule they have
+  // nothing to test. (Defensively, renderTestHome also hides any empty roll track.)
   { id:'tm_smallplt',  name:'Roll Components — Sushi Small Plates',  type:'roll', section:'Sushi Small Plates', levels:true },
   { id:'tm_full',      name:'Roll Components — Full Menu',           type:'roll', section:'*ALL*',              levels:true },
   { id:'tm_know',      name:'Know the Menu — Category Flashcard Quiz', type:'know',  levels:false },
@@ -413,6 +442,7 @@ async function doLogin(first, last, pin){
     S.menu = m.food || [];
     S.drinksAvailable = !!m.drinksAvailable;
     S.pairingsAvailable = !!m.pairingsAvailable;
+    canonicalizeMenu();        // collapse plural-duplicate ingredients before anything reads them
     buildIngredientIndex();
   }
   saveSession(first, last, pin);   // remember login so a pull-to-refresh restores it
@@ -499,6 +529,32 @@ function logout(){
 /* ===========================================================================
    INGREDIENT INDEX (for decoys + Level 2 word bank)
 =========================================================================== */
+// Canonical ingredient spellings. Collapses exact plural duplicates to the
+// singular so the same ingredient can never appear twice in a word bank or as
+// its own decoy (e.g. "scallions" → "scallion"). True synonyms that may carry a
+// real kitchen distinction (e.g. green onion vs scallion) are intentionally
+// left alone. Keys must be lowercase.
+const ING_CANON = {
+  'scallions': 'scallion',
+  'carrots':   'carrot'
+};
+function canonIng(s){
+  const t = String(s == null ? '' : s).trim();
+  return ING_CANON[t.toLowerCase()] || t;
+}
+// Rewrites every menu item's ingredient list to canonical spellings, dropping
+// any duplicate that collapses onto an ingredient already in the same item.
+function canonicalizeMenu(){
+  S.menu.forEach(it => {
+    const seen = new Set(), out = [];
+    (it.ingredients || []).forEach(ing => {
+      const c = canonIng(ing); if(!c) return;
+      const k = c.toLowerCase();
+      if(!seen.has(k)){ seen.add(k); out.push(c); }
+    });
+    it.ingredients = out;
+  });
+}
 function buildIngredientIndex(){
   const set = new Set();
   S.menu.forEach(it => it.ingredients.forEach(ing => { if(ing) set.add(ing.trim()); }));
@@ -747,6 +803,10 @@ function drawFlashcard(){
         <span class="text-muted text-sm">Card ${fcIndex+1} of ${FLASHCARDS.length}</span>
         <button onclick="fcMove(1)" class="text-gold text-sm ${fcIndex===FLASHCARDS.length-1?'opacity-30 pointer-events-none':''}">Next &rarr;</button>
       </div>
+      ${card.fact ? `<div class="border-l-2 border-gold pl-3 mt-5">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-1">Did you know?</p>
+        <p class="text-sm text-text leading-relaxed">${esc(card.fact)}</p>
+      </div>` : ''}
     </div>`;
 }
 function fcMove(d){ fcIndex = Math.max(0, Math.min(FLASHCARDS.length-1, fcIndex+d)); drawFlashcard(); }
@@ -864,6 +924,7 @@ function renderTestHome(){
     }
     const section = trackSection(t);
     if(t.type === 'roll'){
+      if(eligibleRollItems(t).length === 0) return '';   // no 2+-ingredient dishes → hide this track
       const l1 = lastResultFor(section, 1);
       const unlocked = level2Unlocked(section);
       const badge = unlocked
@@ -946,10 +1007,17 @@ function buildWordBank(correct){
   return bank.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 }
 
+// Roll tests only cover dishes with 2+ ingredients. Single-ingredient items
+// (plain nigiri, hosomaki, seaweed salad, etc.) are excluded everywhere in the
+// Test tab — they make for trivial "select the one ingredient" questions.
+function eligibleRollItems(track){
+  const base = (track.section === '*ALL*') ? S.menu : S.menu.filter(it => it.section === track.section);
+  return base.filter(it => (it.ingredients || []).length >= 2);
+}
+
 function buildQuestions(track, level){
   if(track.type === 'roll'){
-    let items = (track.section === '*ALL*') ? S.menu.slice() : S.menu.filter(it => it.section === track.section);
-    items = shuffle(items).slice(0, MAX_ROLL_QUESTIONS);
+    let items = shuffle(eligibleRollItems(track)).slice(0, MAX_ROLL_QUESTIONS);
     if(level === 2){
       return items.map(it => { const correct = it.ingredients.slice(); return { type:'wordbank', item:it, correct, bank: buildWordBank(correct) }; });
     }
@@ -966,7 +1034,7 @@ function buildQuestions(track, level){
     return shuffle(FLASHCARDS).map(card => {
       const distract = sample(FLASHCARDS.filter(f => f.term !== card.term), 3).map(f => f.def);
       const options = shuffle([card.def, ...distract]);
-      return { type:'mcq', prompt: card.term, sub:'Which definition matches this term?', options, correctIndex: options.indexOf(card.def) };
+      return { type:'mcq', prompt: card.term, sub:'Which definition matches this term?', options, correctIndex: options.indexOf(card.def), fact: card.fact };
     });
   }
   if(track.type === 'description'){
@@ -1048,6 +1116,7 @@ function saToggle(btn){
 function submitSelectAll(){
   const t = S.test; if(t.answered) return; t.answered = true;
   const q = t.questions[t.idx];
+  const isAllergen = q.type === 'allergen';
   const correct = new Set(Array.from(q.correct).map(s => s.toLowerCase()));
   let allRight = true;
   document.querySelectorAll('#saGrid .saOpt').forEach(btn => {
@@ -1055,12 +1124,34 @@ function submitSelectAll(){
     const isCorrect = correct.has(label.toLowerCase());
     const sel = !!btn.dataset.sel;
     btn.classList.remove('bg-gold','text-bg','bg-chip','text-text'); btn.classList.add('text-text');
-    if(isCorrect && sel){ btn.style.borderColor='#27AE60'; btn.style.background='rgba(39,174,96,0.15)'; }
-    else if(isCorrect && !sel){ btn.style.borderColor='#27AE60'; btn.innerHTML='＋ '+esc(label); allRight=false; }
-    else if(!isCorrect && sel){ btn.style.borderColor='#C0392B'; btn.innerHTML='✗ '+esc(label); allRight=false; }
+    if(isAllergen){
+      // Allergen test keeps its original reveal: only the allergens that are
+      // actually present get marked; absent ones are left blank.
+      if(isCorrect && sel){ saGlow(btn,'green'); }
+      else if(isCorrect && !sel){ saGlow(btn,'green'); btn.innerHTML='＋ '+esc(label); allRight=false; }
+      else if(!isCorrect && sel){ saGlow(btn,'red'); btn.innerHTML='✗ '+esc(label); allRight=false; }
+    } else {
+      // Ingredient test: every correct ingredient glows green (belongs in this
+      // dish), every wrong one glows red (does not). The ✗ flags only the wrong
+      // ones the team member actually selected; correct ones carry no marker.
+      if(isCorrect){ saGlow(btn,'green'); if(!sel) allRight=false; }
+      else { saGlow(btn,'red'); if(sel){ btn.innerHTML='✗ '+esc(label); allRight=false; } }
+    }
   });
   gradeAndReveal(allRight, q.item);
   $('saSubmit').classList.add('hidden'); $('saNext').classList.remove('hidden');
+}
+// Applies the green ("belongs") or red ("does not belong") glow to an option.
+function saGlow(btn, color){
+  if(color === 'green'){
+    btn.style.borderColor = '#27AE60';
+    btn.style.background   = 'rgba(39,174,96,0.18)';
+    btn.style.boxShadow    = '0 0 10px rgba(39,174,96,0.55)';
+  } else {
+    btn.style.borderColor = '#C0392B';
+    btn.style.background   = 'rgba(192,57,43,0.18)';
+    btn.style.boxShadow    = '0 0 10px rgba(192,57,43,0.55)';
+  }
 }
 
 /* ---- Word bank (roll Level 2) -------------------------------------------- */
@@ -1158,6 +1249,10 @@ function answerMCQ(i){
   const right = (i === q.correctIndex);
   let html = right ? `<p class="text-pass font-semibold">Correct.</p>` : `<p class="text-fail font-semibold">Not quite — the right answer is highlighted green.</p>`;
   if(q.explanation) html += `<p class="text-sm text-muted mt-2 leading-relaxed">${esc(q.explanation)}</p>`;
+  if(q.fact) html += `<div class="border-l-2 border-gold pl-3 mt-3">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-1">Did you know?</p>
+      <p class="text-sm text-text leading-relaxed">${esc(q.fact)}</p>
+    </div>`;
   $('mcqResult').innerHTML = html;
   recordOutcome(right, q.item);
   $('mcqNext').classList.remove('hidden');

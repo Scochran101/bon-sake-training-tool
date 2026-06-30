@@ -59,6 +59,20 @@
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 </style>
+
+<!-- PWA: home screen install support -->
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#0A0A0A">
+
+<!-- iOS-specific home screen support -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Bon Sake">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+<!-- Android / general -->
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+<link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512.png">
 </head>
 
 <body class="bg-bg text-text font-body min-h-screen antialiased">
@@ -1714,6 +1728,17 @@ function checkAbandonedOnReturn(){
   setTimeout(() => alert('You left your test early. This has been logged.'), 400);
   return true;
 }
+</script>
+
+<!-- Register minimal service worker so the app qualifies as installable -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.log('Service worker registration failed:', err);
+      });
+    });
+  }
 </script>
 </body>
 </html>

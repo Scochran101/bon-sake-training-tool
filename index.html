@@ -134,6 +134,7 @@
         <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📖 Study</button>
         <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">✏️ Test</button>
         <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📊 Progress</button>
+        <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">👥 Team</button>
       </nav>
     </div>
   </header>
@@ -143,6 +144,7 @@
     <div id="tab-study"    class="hidden"></div>
     <div id="tab-test"     class="hidden"></div>
     <div id="tab-progress" class="hidden"></div>
+    <div id="tab-team"     class="hidden"></div>
   </main>
 </section>
 
@@ -370,6 +372,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('modalLogo').innerHTML  = logoImg('w-20 h-20');
   $('loginForm').addEventListener('submit', handleLogin);
   $('antiCheatStart').addEventListener('click', beginTestAfterModal);
+  restoreSession();   // if a refresh wiped memory, silently log the user back in
 });
 
 /* ===========================================================================
@@ -385,25 +388,9 @@ async function handleLogin(e){
 
   showLoader('Signing you in…');
   try {
-    const r = await apiPost({ action:'login', first, last, pin });
-    if(!r.ok){ hideLoader(); return loginError(r.error || 'Name or PIN not recognized. See your manager.'); }
-
-    S.user = r.user;
-    S.pin = pin;                 // kept in memory only (never stored) — authorizes manager actions
-    S.results = r.results || [];
-
-    // Load the menu if we don't have it yet
-    if(S.menu.length === 0){
-      showLoader('Loading the menu…');
-      const m = await apiGet('getMenu');
-      if(!m.ok){ hideLoader(); return loginError('Could not load the menu. Check your connection and try again.'); }
-      S.menu = m.food || [];
-      S.drinksAvailable = !!m.drinksAvailable;
-      S.pairingsAvailable = !!m.pairingsAvailable;
-      buildIngredientIndex();
-    }
-
+    const r = await doLogin(first, last, pin);
     hideLoader();
+    if(!r.ok) return loginError(r.error || 'Name or PIN not recognized. See your manager.');
     enterApp();
   } catch(err){
     hideLoader();
@@ -411,15 +398,75 @@ async function handleLogin(e){
   }
 }
 
+// Shared login path used by both the form and silent session-restore on refresh.
+async function doLogin(first, last, pin){
+  const r = await apiPost({ action:'login', first, last, pin });
+  if(!r.ok) return { ok:false, error:r.error };
+  S.user = r.user;
+  S.pin = pin;
+  S.results = r.results || [];
+  // Load the menu if we don't have it yet
+  if(S.menu.length === 0){
+    showLoader('Loading the menu…');
+    const m = await apiGet('getMenu');
+    if(!m.ok) return { ok:false, error:'Could not load the menu. Check your connection and try again.' };
+    S.menu = m.food || [];
+    S.drinksAvailable = !!m.drinksAvailable;
+    S.pairingsAvailable = !!m.pairingsAvailable;
+    buildIngredientIndex();
+  }
+  saveSession(first, last, pin);   // remember login so a pull-to-refresh restores it
+  return { ok:true };
+}
+
+/* ---- Session persistence -------------------------------------------------
+   sessionStorage survives a page refresh but clears when the tab/browser is
+   closed — so a refresh keeps the user logged in, and fully closing the app
+   (or tapping Log out) returns to the login screen. Good on shared devices.
+-------------------------------------------------------------------------- */
+function saveSession(first, last, pin){
+  try { sessionStorage.setItem('bonsake_session', JSON.stringify({ first, last, pin })); } catch(e){}
+}
+function clearSession(){
+  try { sessionStorage.removeItem('bonsake_session'); sessionStorage.removeItem('bonsake_tab'); } catch(e){}
+}
+async function restoreSession(){
+  let s;
+  try { s = JSON.parse(sessionStorage.getItem('bonsake_session') || 'null'); } catch(e){ s = null; }
+  if(!s || !s.first || !s.last || !s.pin) return;
+  showLoader('Welcome back…');
+  try {
+    const r = await doLogin(s.first, s.last, s.pin);
+    hideLoader();
+    if(!r.ok){ clearSession(); return; }   // stale creds (e.g. PIN was changed) → back to login
+    enterApp({ fromRefresh:true });
+  } catch(e){ hideLoader(); clearSession(); }
+}
+
 function loginError(msg){ const el = $('loginError'); el.textContent = msg; show(el); }
 
-function enterApp(){
+function enterApp(opts){
+  opts = opts || {};
   hide($('view-login'));
   show($('view-main'));
   $('headerUser').textContent = S.user.first_name + ' ' + S.user.last_name;
-  // Check whether a previous test was abandoned (left mid-test, then returned)
-  checkAbandonedOnReturn();
-  switchTab('study');
+  updateTeamTabVisibility();   // the Team tab only exists for managers
+  // If they refreshed mid-test, it's logged as left-early and they land on the test list.
+  const wasMidTest = checkAbandonedOnReturn();
+  let tab = 'study';
+  if(wasMidTest){
+    tab = 'test';
+  } else if(opts.fromRefresh){
+    const saved = sessionStorage.getItem('bonsake_tab');
+    if(saved && ['study','test','progress','team'].includes(saved)) tab = saved;
+    if(tab === 'team' && !isManager()) tab = 'study';
+  }
+  switchTab(tab);
+}
+
+function updateTeamTabVisibility(){
+  const btn = document.querySelector('.tabBtn[data-tab="team"]');
+  if(btn) btn.classList.toggle('hidden', !isManager());
 }
 
 function logout(){
@@ -440,6 +487,7 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   progressView = 'me';
+  clearSession();   // forget the remembered login so a refresh won't bring it back
   S.study = { section:'All Items', itemId:null, showDetailMobile:false };
   applyNavLockStyles();
   $('loginForm').reset();
@@ -463,9 +511,11 @@ function buildIngredientIndex(){
 function switchTab(tab){
   if(S.testActive) return;                            // nav fully locked during a test
   S.activeTab = tab;
-  ['study','test','progress'].forEach(t => {
+  if(S.user){ try { sessionStorage.setItem('bonsake_tab', tab); } catch(e){} }  // restore this tab on refresh
+  ['study','test','progress','team'].forEach(t => {
     const btn = document.querySelector(`.tabBtn[data-tab="${t}"]`);
     const pane = $('tab-' + t);
+    if(!btn || !pane) return;
     const isActive = (t === tab);
     btn.classList.toggle('text-gold', isActive);
     btn.classList.toggle('border-gold', isActive);
@@ -476,11 +526,13 @@ function switchTab(tab){
   if(tab === 'study')    renderStudy();
   if(tab === 'test')     renderTestHome();
   if(tab === 'progress') renderProgress();
+  if(tab === 'team')     renderTeam();
 }
 
 function applyNavLockStyles(){
-  ['study','progress'].forEach(t => {
+  ['study','progress','team'].forEach(t => {
     const btn = document.querySelector(`.tabBtn[data-tab="${t}"]`);
+    if(!btn) return;
     if(S.testActive){ btn.classList.add('opacity-30','pointer-events-none'); }
     else { btn.classList.remove('opacity-30','pointer-events-none'); }
   });
@@ -586,16 +638,40 @@ function renderItemDetail(id){
     ? `<img src="${esc(it.photo_url)}" alt="${esc(it.item_name)}" class="w-full h-52 object-cover rounded-lg border border-line" onerror="this.closest('[data-photo]').remove()"/>`
     : '';
 
-  const sell = it.sell_description
+  // Optional sections — each appears ONLY when the Google Sheet has its data.
+  const sellHtml = it.sell_description
     ? `<div class="border-l-2 border-gold pl-4 py-1">
          <p class="text-xs uppercase tracking-wider text-golddim mb-1">How to Sell It</p>
          <p class="font-display italic text-text leading-relaxed">${esc(it.sell_description)}</p>
        </div>`
-    : `<div class="border-l-2 border-line pl-4 py-1"><p class="text-muted text-sm italic">Sell description coming soon.</p></div>`;
+    : '';
 
-  const pairing = it.pairing_drink
-    ? `<p class="text-text text-sm"><span class="text-gold">${esc(it.pairing_drink)}</span> — ${esc(it.pairing_note||'')}</p>`
-    : `<p class="text-muted text-sm italic">Pairing coming soon</p>`;
+  const heatHas = Number(it.flavor_heat) > 0;
+  const richHas = Number(it.flavor_richness) > 0;
+  let flavorCards = '';
+  if(heatHas) flavorCards += `<div class="bg-bg border border-line rounded-lg p-3 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-golddim mb-2">Heat</p>
+        <div class="flex justify-center">${dotMeter(it.flavor_heat)}</div>
+      </div>`;
+  if(richHas) flavorCards += `<div class="bg-bg border border-line rounded-lg p-3 text-center">
+        <p class="text-[10px] uppercase tracking-wider text-golddim mb-2">Richness</p>
+        <div class="flex justify-center">${dotMeter(it.flavor_richness)}</div>
+      </div>`;
+  const flavorHtml = flavorCards ? `<div class="grid grid-cols-2 gap-2">${flavorCards}</div>` : '';
+
+  const pairingHtml = it.pairing_drink
+    ? `<div>
+         <p class="text-xs uppercase tracking-wider text-golddim mb-1">Suggested Pairing</p>
+         <p class="text-text text-sm"><span class="text-gold">${esc(it.pairing_drink)}</span>${it.pairing_note?(' — '+esc(it.pairing_note)):''}</p>
+       </div>`
+    : '';
+
+  // Only render the divider + extras block when at least one optional section exists,
+  // so items with none of them put Quick Practice right under "What's In It".
+  const extras = [sellHtml, flavorHtml, pairingHtml].filter(Boolean);
+  const extrasHtml = extras.length
+    ? `<hr class="border-line my-5"/><div class="space-y-5">${extras.join('')}</div>`
+    : '';
 
   return `
   <div class="bg-surface border border-line rounded-xl p-5 fade-in">
@@ -614,29 +690,7 @@ function renderItemDetail(id){
     <p class="text-xs uppercase tracking-wider text-golddim mb-2">What's In It</p>
     <div>${chips}</div>
 
-    <hr class="border-line my-5"/>
-
-    ${sell}
-
-    <div class="grid grid-cols-3 gap-2 mt-5">
-      <div class="bg-bg border border-line rounded-lg p-3 text-center">
-        <p class="text-[10px] uppercase tracking-wider text-golddim mb-2">Heat</p>
-        <div class="flex justify-center">${dotMeter(it.flavor_heat)}</div>
-      </div>
-      <div class="bg-bg border border-line rounded-lg p-3 text-center">
-        <p class="text-[10px] uppercase tracking-wider text-golddim mb-2">Richness</p>
-        <div class="flex justify-center">${dotMeter(it.flavor_richness)}</div>
-      </div>
-      <div class="bg-bg border border-line rounded-lg p-3 text-center">
-        <p class="text-[10px] uppercase tracking-wider text-golddim mb-2">Best For</p>
-        <p class="text-xs text-text leading-tight">${esc(it.flavor_best_for||'—')}</p>
-      </div>
-    </div>
-
-    <div class="mt-5">
-      <p class="text-xs uppercase tracking-wider text-golddim mb-1">Suggested Pairing</p>
-      ${pairing}
-    </div>
+    ${extrasHtml}
 
     <button onclick="openQuickPractice('${it.item_id}')"
       class="mt-6 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">Quick Practice →</button>
@@ -965,7 +1019,7 @@ function renderSelectAll(q){
   const isAllergen = q.type === 'allergen';
   const prompt = isAllergen
     ? `Select ALL allergens present in the <span class="text-text">${esc(it.item_name)}</span>. If it has none, submit with nothing selected.`
-    : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>. Select everything that applies — there may be more than one.`;
+    : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>.`;
   const cols = isAllergen ? 'grid-cols-2' : 'grid-cols-2';
   const opts = q.options.map((o,i) =>
     `<button data-opt="${i}" onclick="saToggle(this)" class="saOpt text-left bg-chip border border-line rounded-lg px-3 py-2.5 text-sm text-text transition-colors">${esc(o)}</button>`
@@ -1218,11 +1272,10 @@ function openStudyItem(itemId){
 /* ===========================================================================
    PROGRESS TAB
 =========================================================================== */
-let progressView = 'me';  // 'me' | 'leaderboard' | 'manager'
+let progressView = 'me';  // 'me' | 'leaderboard'
 
 function renderProgress(){
   if(progressView === 'leaderboard') return renderLeaderboard();
-  if(progressView === 'manager')     return renderManager();
   const pane = $('tab-progress');
   const res = S.results.slice();
 
@@ -1281,10 +1334,7 @@ function renderProgress(){
         <h2 class="font-display text-2xl text-text">Welcome back, ${esc(S.user.first_name)}</h2>
         <p class="text-xs text-muted mt-0.5">Last test taken: ${fmtDate(lastTaken)} · Last test passed: ${fmtDate(lastPassed)}</p>
       </div>
-      <div class="flex gap-2">
-        <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">Leaderboard</button>
-        ${isManager() ? `<button onclick="showManager()" class="text-xs border border-gold bg-gold/10 text-gold rounded-lg px-3 py-2 font-semibold">Manager</button>` : ''}
-      </div>
+      <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">Leaderboard</button>
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
@@ -1318,56 +1368,64 @@ function renderProgress(){
 function toggleLeaderboard(){ progressView = progressView==='me' ? 'leaderboard' : 'me'; renderProgress(); }
 
 /* ===========================================================================
-   MANAGER VIEW  (only for staff whose role is "Manager")
+   TEAM TAB  (managers only) — combined roster + add / edit / remove members
 =========================================================================== */
 function isManager(){ return !!(S.user && String(S.user.role||'').toLowerCase()==='manager'); }
-function showManager(){ progressView = 'manager'; renderProgress(); }
+let teamEditIdx = -1;   // index of the roster row currently being edited (-1 = none)
 
-async function renderManager(){
-  const pane = $('tab-progress');
+async function renderTeam(){
+  const pane = $('tab-team');
   pane.innerHTML = `
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-display text-2xl text-text">Manager</h2>
-      <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">My Progress</button>
-    </div>
-    <div id="mgrBody"><p class="text-muted text-sm">Loading team data…</p></div>`;
+    <h2 class="font-display text-2xl text-text mb-4">Team</h2>
+    <div id="teamBody"><p class="text-muted text-sm">Loading team…</p></div>`;
+  teamEditIdx = -1;
   try {
     const r = await apiPost({ action:'managerData', first:S.user.first_name, last:S.user.last_name, pin:S.pin });
-    if(!r.ok){ $('mgrBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load manager data.')}</p>`; return; }
+    if(!r.ok){ $('teamBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load team data.')}</p>`; return; }
     S.managerData = r;
-    drawManager(r);
+    drawTeam(r);
   } catch(e){
-    $('mgrBody').innerHTML = `<p class="text-fail text-sm">Couldn't load team data. Check your connection.</p>`;
+    $('teamBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the team. Check your connection.</p>`;
   }
 }
 
-function drawManager(d){
+function drawTeam(d){
   const staff = d.staff||[], results = d.results||[], abandoned = d.abandoned||[];
 
-  // Aggregate every staff member's results
+  // Aggregate each member's results (avg = all attempts, matching their Overall Score)
   const agg = {};
   results.forEach(x => {
     const name = (x.first_name+' '+x.last_name).trim();
-    if(!agg[name]) agg[name] = { tests:0, sum:0, pass:0, last:null };
+    if(!agg[name]) agg[name] = { tests:0, sum:0 };
     agg[name].tests++; agg[name].sum += Number(x.score_percent||0);
-    if(String(x.pass_fail).toUpperCase()==='PASS') agg[name].pass++;
-    const dt = x.date_taken ? new Date(x.date_taken) : null;
-    if(dt && (!agg[name].last || dt>agg[name].last)) agg[name].last = dt;
   });
 
-  const dashRows = staff.map(s => {
+  // One combined table: Name · Tests · Avg · Date Added · PIN · Edit/Remove
+  const rows = staff.map((s,i) => {
     const name = (s.first_name+' '+s.last_name).trim();
-    const a = agg[name] || { tests:0, sum:0, pass:0, last:null };
-    const avg = a.tests ? Math.round(a.sum/a.tests) : 0;
-    return `<tr class="border-b border-line">
-      <td class="py-2 pr-2 text-text">${esc(name)}</td>
-      <td class="py-2 pr-2 text-muted">${esc(s.role||'')}</td>
-      <td class="py-2 pr-2 text-muted">${a.tests}</td>
-      <td class="py-2 pr-2 text-text">${a.tests?avg+'%':'—'}</td>
-      <td class="py-2 pr-2 text-muted">${a.tests?(a.pass+'/'+a.tests):'—'}</td>
-      <td class="py-2 text-muted whitespace-nowrap">${a.last?fmtDate(a.last.toISOString()):'—'}</td>
+    const a = agg[name] || { tests:0, sum:0 };
+    const avg = a.tests ? Math.round(a.sum/a.tests)+'%' : '—';
+    const editing = (i === teamEditIdx);
+    const roleCell = editing
+      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text mt-1">${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>`
+      : `<span class="text-[11px] text-muted">${esc(s.role||'')}</span>`;
+    const pinCell = editing
+      ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
+      : `<span class="text-text tracking-widest">${esc(s.pin)}</span>`;
+    const actions = editing
+      ? `<button onclick="teamSave(${i})" class="text-xs bg-gold text-bg rounded px-3 py-1.5 font-semibold">Save</button>
+         <button onclick="teamCancel()" class="text-xs border border-line text-muted rounded px-3 py-1.5">Cancel</button>`
+      : `<button onclick="teamEdit(${i})" class="text-xs border border-gold text-gold rounded px-3 py-1.5">Edit</button>
+         <button onclick="teamRemove(${i})" class="text-xs border border-fail text-fail rounded px-3 py-1.5">Remove</button>`;
+    return `<tr class="border-b border-line align-top">
+      <td class="py-2 pr-3"><p class="text-sm text-text leading-tight">${esc(name)}</p>${roleCell}</td>
+      <td class="py-2 pr-3 text-muted">${a.tests}</td>
+      <td class="py-2 pr-3 text-text">${avg}</td>
+      <td class="py-2 pr-3 text-muted whitespace-nowrap">${fmtDate(s.date_added)}</td>
+      <td class="py-2 pr-3">${pinCell}</td>
+      <td class="py-2"><div class="flex gap-1.5 flex-wrap">${actions}</div></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="6" class="py-3 text-muted text-sm">No staff yet.</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="py-3 text-muted text-sm">No team members yet.</td></tr>`;
 
   const abRows = abandoned.slice()
     .sort((x,y)=> new Date(y.timestamp_abandoned)-new Date(x.timestamp_abandoned))
@@ -1378,43 +1436,13 @@ function drawManager(d){
       <td class="py-2 text-muted whitespace-nowrap">${fmtDate(x.timestamp_abandoned)}</td>
     </tr>`).join('') || `<tr><td colspan="4" class="py-3 text-muted text-sm">No abandoned tests. 👍</td></tr>`;
 
-  const roster = staff.map((s,i) => {
-    const name = (s.first_name+' '+s.last_name).trim();
-    return `<div class="bg-surface border border-line rounded-lg p-3 flex flex-wrap items-center gap-2">
-      <div class="flex-1 min-w-[110px]">
-        <p class="text-sm text-text">${esc(name)}</p>
-        <p class="text-[11px] text-muted">Added ${fmtDate(s.date_added)}</p>
-      </div>
-      <select id="role_${i}" class="bg-bg border border-line rounded px-2 py-1.5 text-xs text-text">
-        ${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}
-      </select>
-      <input id="pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1.5 text-xs text-text tracking-widest" />
-      <button onclick="mgrSaveStaff(${i})" class="text-xs bg-gold text-bg rounded px-3 py-1.5 font-semibold">Save</button>
-      <button onclick="mgrRemoveStaff(${i})" class="text-xs border border-fail text-fail rounded px-3 py-1.5">Remove</button>
-    </div>`;
-  }).join('');
-
-  $('mgrBody').innerHTML = `
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Team Dashboard</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Role</th><th class="pb-2 pr-2 font-medium">Tests</th><th class="pb-2 pr-2 font-medium">Avg</th><th class="pb-2 pr-2 font-medium">Passed</th><th class="pb-2 font-medium">Last Active</th>
-        </tr></thead><tbody>${dashRows}</tbody>
-      </table>
+  $('teamBody').innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm uppercase tracking-wider text-golddim">Team Members</h3>
+      <button onclick="teamShowAddPanel()" class="text-xs bg-gold text-bg rounded-lg px-3 py-2 font-semibold">+ Add Team Member</button>
     </div>
 
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Abandoned Tests</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Test</th><th class="pb-2 pr-2 font-medium">Done</th><th class="pb-2 font-medium">When</th>
-        </tr></thead><tbody>${abRows}</tbody>
-      </table>
-    </div>
-
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Manage Team</h3>
-    <div class="bg-surface border border-gold rounded-xl p-4 mb-4">
+    <div id="teamAddPanel" class="hidden bg-surface border border-gold rounded-xl p-4 mb-4">
       <p class="text-xs uppercase tracking-wider text-golddim mb-2">Add Team Member</p>
       <div class="grid grid-cols-2 gap-2">
         <input id="add_first" placeholder="First name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
@@ -1424,34 +1452,57 @@ function drawManager(d){
         </select>
         <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
       </div>
-      <p id="mgrMsg" class="text-xs mt-2"></p>
-      <button onclick="mgrAddStaff()" class="mt-2 w-full bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Add Team Member</button>
+      <p id="teamMsg" class="text-xs mt-2"></p>
+      <div class="flex gap-2 mt-2">
+        <button onclick="teamAddMember()" class="flex-1 bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Add</button>
+        <button onclick="teamHideAddPanel()" class="flex-1 border border-line text-muted py-2.5 rounded-lg text-sm">Cancel</button>
+      </div>
     </div>
-    <div class="space-y-2">${roster}</div>`;
+
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+          <th class="pb-2 pr-3 font-medium">Name</th><th class="pb-2 pr-3 font-medium">Tests</th><th class="pb-2 pr-3 font-medium">Avg</th><th class="pb-2 pr-3 font-medium">Date Added</th><th class="pb-2 pr-3 font-medium">PIN</th><th class="pb-2 font-medium">Actions</th>
+        </tr></thead><tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Abandoned Tests</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Test</th><th class="pb-2 pr-2 font-medium">Done</th><th class="pb-2 font-medium">When</th>
+        </tr></thead><tbody>${abRows}</tbody>
+      </table>
+    </div>`;
 }
 
-function mgrMsg(msg, ok){
-  const el = $('mgrMsg'); if(!el) return;
+function teamMsg(msg, ok){
+  const el = $('teamMsg'); if(!el) return;
   el.textContent = msg; el.className = 'text-xs mt-2 ' + (ok?'text-pass':'text-fail');
 }
+function teamShowAddPanel(){ teamEditIdx = -1; drawTeam(S.managerData); const p = $('teamAddPanel'); if(p) p.classList.remove('hidden'); }
+function teamHideAddPanel(){ const p = $('teamAddPanel'); if(p) p.classList.add('hidden'); }
+function teamEdit(i){ teamEditIdx = i; drawTeam(S.managerData); }
+function teamCancel(){ teamEditIdx = -1; drawTeam(S.managerData); }
 
-async function mgrAddStaff(){
+async function teamAddMember(){
   const first=$('add_first').value.trim(), last=$('add_last').value.trim(), role=$('add_role').value, pin=$('add_pin').value.trim();
-  if(!first||!last||!pin) return mgrMsg('First name, last name, and PIN are required.', false);
-  if(!/^\d{4}$/.test(pin)) return mgrMsg('PIN must be exactly 4 digits.', false);
+  if(!first||!last||!pin) return teamMsg('First name, last name, and PIN are required.', false);
+  if(!/^\d{4}$/.test(pin)) return teamMsg('PIN must be exactly 4 digits.', false);
   showLoader('Adding team member…');
   try {
     const r = await apiPost({ action:'addStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
       new_first:first, new_last:last, new_role:role, new_pin:pin });
     hideLoader();
-    if(!r.ok) return mgrMsg(r.error||'Could not add team member.', false);
-    renderManager();
-  } catch(e){ hideLoader(); mgrMsg('Connection error. Try again.', false); }
+    if(!r.ok) return teamMsg(r.error||'Could not add team member.', false);
+    renderTeam();
+  } catch(e){ hideLoader(); teamMsg('Connection error. Try again.', false); }
 }
 
-async function mgrSaveStaff(i){
+async function teamSave(i){
   const s = (S.managerData.staff||[])[i]; if(!s) return;
-  const role = $('role_'+i).value, pin = $('pin_'+i).value.trim();
+  const role = $('team_role_'+i).value, pin = $('team_pin_'+i).value.trim();
   if(pin && !/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
   showLoader('Saving…');
   try {
@@ -1459,11 +1510,11 @@ async function mgrSaveStaff(i){
       target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin });
     hideLoader();
     if(!r.ok){ alert(r.error||'Could not save.'); return; }
-    renderManager();
+    teamEditIdx = -1; renderTeam();
   } catch(e){ hideLoader(); alert('Connection error. Try again.'); }
 }
 
-async function mgrRemoveStaff(i){
+async function teamRemove(i){
   const s = (S.managerData.staff||[])[i]; if(!s) return;
   const name = (s.first_name+' '+s.last_name).trim();
   if(!confirm('Remove '+name+"? This deletes their login. Their past test results stay in the sheet.")) return;
@@ -1473,7 +1524,7 @@ async function mgrRemoveStaff(i){
       target_first:s.first_name, target_last:s.last_name });
     hideLoader();
     if(!r.ok){ alert(r.error||'Could not remove.'); return; }
-    renderManager();
+    teamEditIdx = -1; renderTeam();
   } catch(e){ hideLoader(); alert('Connection error. Try again.'); }
 }
 
@@ -1550,21 +1601,23 @@ function updateAbandonFlag(){
   try { const o = JSON.parse(raw); o.completed = S.test.idx; sessionStorage.setItem(abandonKey(), JSON.stringify(o)); } catch(e){}
 }
 function clearAbandonFlag(){ sessionStorage.removeItem(abandonKey()); }
-async function checkAbandonedOnReturn(){
+// Returns true if a test was left unfinished (so the caller can drop the user on the test list).
+function checkAbandonedOnReturn(){
   const raw = sessionStorage.getItem(abandonKey());
-  if(!raw) return;
-  let o; try { o = JSON.parse(raw); } catch(e){ sessionStorage.removeItem(abandonKey()); return; }
+  if(!raw) return false;
+  let o; try { o = JSON.parse(raw); } catch(e){ sessionStorage.removeItem(abandonKey()); return false; }
   sessionStorage.removeItem(abandonKey());
-  // Log it
+  // Fire-and-forget log so the UI can restore without waiting on the network
   try {
-    await apiPost({
+    apiPost({
       action:'logAbandon',
       first:o.first, last:o.last, test_section:o.section, test_level:o.level,
       timestamp_started: new Date(o.started).toISOString(),
       questions_completed:o.completed, total_questions:o.total
     });
   } catch(e){}
-  alert('You left your test early. This has been logged.');
+  setTimeout(() => alert('You left your test early. This has been logged.'), 400);
+  return true;
 }
 </script>
 </body>

@@ -46,6 +46,11 @@
   .no-scrollbar::-webkit-scrollbar { display:none; }
   .no-scrollbar { -ms-overflow-style:none; scrollbar-width:none; }
 
+  /* Masks the PIN visually (shows dots) WITHOUT type="password", so the
+     browser's password manager ignores it — no save prompts, no false
+     "found in a data breach" warnings on 4-digit PINs. */
+  .pin-mask { -webkit-text-security: disc; text-security: disc; }
+
   /* Flashcard flip */
   .flip-card { perspective: 1200px; }
   .flip-inner { position:relative; width:100%; height:100%; transition:transform .5s; transform-style:preserve-3d; }
@@ -111,8 +116,9 @@
       </div>
       <div>
         <label class="block text-xs uppercase tracking-wider text-golddim mb-1">4-Digit PIN</label>
-        <input id="loginPin" type="password" inputmode="numeric" maxlength="4" required
-          class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="••••" />
+        <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" required
+          autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+          class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="••••" />
       </div>
       <p id="loginError" class="hidden text-fail text-sm text-center"></p>
       <button type="submit"

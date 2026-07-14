@@ -211,6 +211,8 @@ const S = {
   activeTab: 'study',
   testActive: false,     // true while a test is running (locks nav)
   study: { section: 'All Items', itemId: null, showDetailMobile: false },
+  testBrowse: { section: null },   // selected category in the dish-by-dish Test tab
+  dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
 };
 
@@ -309,7 +311,7 @@ const ALLERGEN_OPTIONS = [
 const SECTIONS = [
   'All Items','Signature Maki','Signature Sashimi','Signature Nigiri','Uramaki & Temaki',
   'Hosomaki','Nigiri & Sashimi','Sushi Small Plates','Sushi Starters','Small Plates',
-  'Soups & Salads','Large Plates','Yaki — From the Grill','Know the Menu'
+  'Soups & Salads','Large Plates','Yaki — From the Grill','Menu Terms'
 ];
 
 // ---- Test tracks ----------------------------------------------------------
@@ -323,7 +325,7 @@ const TRACKS = [
   // nothing to test. (Defensively, renderTestHome also hides any empty roll track.)
   { id:'tm_smallplt',  name:'Roll Components — Sushi Small Plates',  type:'roll', section:'Sushi Small Plates', levels:true },
   { id:'tm_full',      name:'Roll Components — Full Menu',           type:'roll', section:'*ALL*',              levels:true },
-  { id:'tm_know',      name:'Know the Menu — Category Flashcard Quiz', type:'know',  levels:false },
+  { id:'tm_know',      name:'Menu Terms', type:'know',  levels:false },
   { id:'tm_allergen',  name:'Allergen Awareness',                    type:'allergen', levels:false, pass:PASS_ALLERGEN },
   { id:'tm_desc',      name:'Description Recall',                     type:'description', levels:false },
   { id:'tm_upsell',    name:'Upsell Test',                           type:'upsell', levels:false },
@@ -448,6 +450,7 @@ async function doLogin(first, last, pin){
   S.user = r.user;
   S.pin = pin;
   S.results = r.results || [];
+  S.dishNotes = r.dishNotes || {};   // this user's tasting notes, keyed by item_id
   // Load the menu if we don't have it yet
   if(S.menu.length === 0){
     showLoader('Loading the menu…');
@@ -530,6 +533,7 @@ function logout(){
   S.testActive = false;
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
+  S.dishNotes = {}; S.testBrowse = { section:null };
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
   S.study = { section:'All Items', itemId:null, showDetailMobile:false };
@@ -646,7 +650,7 @@ function renderStudyBody(){
     body.innerHTML = comingSoonBlock(sec === '🍸 Drinks' ? 'Drinks' : 'Pairings');
     return;
   }
-  if(sec === 'Know the Menu'){ renderFlashcards(body); return; }
+  if(sec === 'Menu Terms'){ renderFlashcards(body); return; }
 
   const items = sectionItems(sec);
   if(!S.study.itemId && items.length) S.study.itemId = items[0].item_id;
@@ -711,7 +715,7 @@ function renderItemDetail(id){
   // Optional sections — each appears ONLY when the Google Sheet has its data.
   const sellHtml = it.sell_description
     ? `<div class="border-l-2 border-gold pl-4 py-1">
-         <p class="text-xs uppercase tracking-wider text-golddim mb-1">How to Sell It</p>
+         <p class="text-xs uppercase tracking-wider text-golddim mb-1">The House Pitch</p>
          <p class="font-display italic text-text leading-relaxed">${esc(it.sell_description)}</p>
        </div>`
     : '';
@@ -762,6 +766,9 @@ function renderItemDetail(id){
 
     ${extrasHtml}
 
+    <hr class="border-line my-5"/>
+    <div id="dishNotesWrap">${renderDishNotes(it.item_id)}</div>
+
     <button onclick="openQuickPractice('${it.item_id}')"
       class="mt-6 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">Quick Practice →</button>
 
@@ -770,6 +777,76 @@ function renderItemDetail(id){
       <button ${next?'':'disabled'} onclick="${next?`selectItem('${next.item_id}')`:''}" class="${next?'text-gold hover:text-[#d8b85e]':'text-line cursor-default'}">${next?esc(next.item_name):''} &rarr;</button>
     </div>
   </div>`;
+}
+
+/* ===========================================================================
+   TASTING NOTES  (per-server: descriptor chips + one pitch line, saved to Sheet)
+=========================================================================== */
+function renderDishNotes(itemId){
+  const n = S.dishNotes[itemId] || { chips:[], pitch:'' };
+  const chips = (n.chips||[]).map((c,i) =>
+    `<span class="inline-flex items-center gap-1 bg-chip border border-line rounded-full pl-3 pr-2 py-1 text-sm text-text mr-2 mb-2">${esc(c)}<button onclick="removeChip('${itemId}',${i})" class="text-muted hover:text-fail leading-none text-base">×</button></span>`
+  ).join('');
+  return `
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1">Your Words</p>
+    <p class="text-xs text-muted mb-2">As you taste it, note how you'd describe it to a guest. These are yours.</p>
+    <div class="mb-2">${chips || '<span class="text-muted text-sm">No words yet — add a few below.</span>'}</div>
+    <input id="chipInput_${itemId}" onkeydown="if(event.key==='Enter'){event.preventDefault();addChip('${itemId}');}"
+      placeholder="Add a word or phrase, then press Enter"
+      class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text mb-2 outline-none focus:border-gold"/>
+    <textarea id="pitchInput_${itemId}" onblur="savePitch('${itemId}')" rows="2"
+      placeholder="Your one-line pitch to a guest (optional)"
+      class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold">${esc(n.pitch||'')}</textarea>
+    <div class="flex items-center justify-between mt-2">
+      <button onclick="showTeamWords('${itemId}')" class="text-xs text-gold">See how the team describes it →</button>
+      <span id="notesSaved_${itemId}" class="text-xs text-muted"></span>
+    </div>
+    <div id="teamWords_${itemId}" class="mt-2"></div>`;
+}
+function ensureNote(itemId){ if(!S.dishNotes[itemId]) S.dishNotes[itemId] = { chips:[], pitch:'' }; return S.dishNotes[itemId]; }
+function redrawDishNotes(itemId){ const w = $('dishNotesWrap'); if(w) w.innerHTML = renderDishNotes(itemId); }
+function addChip(itemId){
+  const inp = $('chipInput_'+itemId); if(!inp) return;
+  const val = inp.value.trim(); if(!val) return;
+  const n = ensureNote(itemId);
+  if(!n.chips.some(c => c.toLowerCase() === val.toLowerCase())) n.chips.push(val);
+  redrawDishNotes(itemId);
+  const ni = $('chipInput_'+itemId); if(ni) ni.focus();
+  saveDishNotesRemote(itemId);
+}
+function removeChip(itemId, i){
+  const n = ensureNote(itemId); n.chips.splice(i, 1);
+  redrawDishNotes(itemId); saveDishNotesRemote(itemId);
+}
+function savePitch(itemId){
+  const ta = $('pitchInput_'+itemId); if(!ta) return;
+  const n = ensureNote(itemId); const v = ta.value.trim();
+  if(v === n.pitch) return;
+  n.pitch = v; saveDishNotesRemote(itemId);
+}
+let _noteSaveTimers = {};
+function saveDishNotesRemote(itemId){
+  const badge = $('notesSaved_'+itemId); if(badge) badge.textContent = 'Saving…';
+  clearTimeout(_noteSaveTimers[itemId]);
+  _noteSaveTimers[itemId] = setTimeout(async () => {
+    const n = S.dishNotes[itemId] || { chips:[], pitch:'' };
+    try {
+      const r = await apiPost({ action:'saveDishNote', first:S.user.first_name, last:S.user.last_name,
+        item_id:itemId, chips:n.chips, pitch:n.pitch });
+      const b = $('notesSaved_'+itemId); if(b) b.textContent = r && r.ok ? 'Saved' : 'Not saved';
+    } catch(e){ const b = $('notesSaved_'+itemId); if(b) b.textContent = 'Not saved'; }
+  }, 700);
+}
+async function showTeamWords(itemId){
+  const box = $('teamWords_'+itemId); if(!box) return;
+  box.innerHTML = `<p class="text-xs text-muted">Loading the team's words…</p>`;
+  try {
+    const r = await apiGet('getDishWords', { item_id: itemId });
+    const words = (r && r.words) || [];
+    if(!words.length){ box.innerHTML = `<p class="text-xs text-muted">No one has added words for this dish yet.</p>`; return; }
+    box.innerHTML = `<p class="text-xs uppercase tracking-wider text-golddim mb-1 mt-1">How the team describes it</p>
+      <div>${words.map(w => `<span class="inline-block bg-bg border border-line rounded-full px-3 py-1 text-sm text-text mr-2 mb-2">${esc(w.word)}${w.count>1?` <span class="text-muted">×${w.count}</span>`:''}</span>`).join('')}</div>`;
+  } catch(e){ box.innerHTML = `<p class="text-xs text-fail">Couldn't load team words.</p>`; }
 }
 
 function photoPlaceholder(){
@@ -922,62 +999,116 @@ function lastResultFor(section, level){
 function level2Unlocked(section){
   return S.results.some(r => r.test_section === section && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && Number(r.score_percent)>=80);
 }
+
+/* ---- Per-dish mastery (drives the dish-by-dish Test tab + leaderboard) ---- */
+function dishResults(itemId){
+  return S.results.filter(r => String(r.test_type||'')==='dish' && String(r.item_id||'')===String(itemId));
+}
+function dishLevelPassed(itemId, level){
+  return dishResults(itemId).some(r => Number(r.test_level)===level && String(r.pass_fail).toUpperCase()==='PASS');
+}
+function dishMastered(itemId){ return dishLevelPassed(itemId, 2); }
+function masteredDishIds(){
+  const s = new Set();
+  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===2 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id) s.add(String(r.item_id)); });
+  return s;
+}
+function learningDishIds(){
+  const mastered = masteredDishIds(); const s = new Set();
+  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id && !mastered.has(String(r.item_id))) s.add(String(r.item_id)); });
+  return s;
+}
+// Dishes with 2+ ingredients in a category (the ones eligible to test on).
+function testableDishes(section){
+  const base = (section === 'All Items' || section === '*ALL*') ? S.menu : S.menu.filter(it => it.section === section);
+  return base.filter(it => (it.ingredients||[]).length >= 2);
+}
+function categoryMastery(section){
+  const dishes = testableDishes(section);
+  const mastered = masteredDishIds();
+  return { mastered: dishes.filter(it => mastered.has(String(it.item_id))).length, total: dishes.length };
+}
+
 function trackSection(track){ return track.type==='roll' ? (track.section==='*ALL*' ? 'Full Menu' : track.section) : trackResultSection(track); }
 function trackResultSection(track){
-  return { know:'Know the Menu', allergen:'Allergen Awareness', description:'Description Recall', upsell:'Upsell Test' }[track.type] || track.name;
+  return { know:'Menu Terms', allergen:'Allergen Awareness', description:'Description Recall', upsell:'Upsell Test' }[track.type] || track.name;
 }
+
+let testCats = [];   // categories currently shown in the dish-by-dish browser
 
 function renderTestHome(){
   const pane = $('tab-test');
-  const cards = TRACKS.map(t => {
-    if(t.type === 'soon'){
-      return `<div class="bg-surface border border-line rounded-xl p-4 opacity-60">
-        <p class="text-text font-medium">${esc(t.name)}</p>
-        <p class="text-xs text-muted mt-1">Coming Soon</p>
-      </div>`;
-    }
-    const section = trackSection(t);
-    if(t.type === 'roll'){
-      if(eligibleRollItems(t).length === 0) return '';   // no 2+-ingredient dishes → hide this track
-      const l1 = lastResultFor(section, 1);
-      const unlocked = level2Unlocked(section);
-      const badge = unlocked
-        ? `<span class="text-xs text-pass border border-pass/50 rounded px-2 py-0.5">Level 2 Unlocked</span>`
-        : `<span class="text-xs text-muted border border-line rounded px-2 py-0.5">🔒 Level 2 Locked</span>`;
-      const last = l1 ? `Last: ${l1.score_percent}% · ${fmtDate(l1.date_taken)}` : 'Not taken yet';
-      return `<div class="bg-surface border border-line rounded-xl p-4">
-        <div class="flex items-start justify-between gap-2">
-          <p class="text-text font-medium leading-tight">${esc(t.name)}</p>
-        </div>
-        <div class="flex flex-wrap gap-2 mt-2">
-          <span class="text-xs text-gold border border-golddim rounded px-2 py-0.5">Level 1 Available</span>
-          ${badge}
-        </div>
-        <p class="text-xs text-muted mt-2">${last}</p>
-        <div class="flex gap-2 mt-3">
-          <button onclick="startTest('${t.id}',1)" class="flex-1 bg-gold text-bg text-sm font-semibold py-2 rounded-lg">Start Level 1</button>
-          <button onclick="${unlocked?`startTest('${t.id}',2)`:`lockedMsg()`}" class="flex-1 text-sm font-semibold py-2 rounded-lg border ${unlocked?'border-gold text-gold':'border-line text-muted'}">${unlocked?'Start Level 2':'🔒 Level 2'}</button>
-        </div>
-      </div>`;
-    }
-    // single-level tracks (section already computed above via trackSection)
-    const lr = lastResultFor(section, null);
-    const last = lr ? `Last: ${lr.score_percent}% · ${fmtDate(lr.date_taken)}` : 'Not taken yet';
-    const note = t.type==='allergen' ? `<p class="text-xs text-fail mt-1">Allergen accuracy is safety-critical. You need 90% to pass.</p>` : '';
-    return `<div class="bg-surface border border-line rounded-xl p-4">
-      <p class="text-text font-medium leading-tight">${esc(t.name)}</p>
-      ${note}
-      <p class="text-xs text-muted mt-2">${last}</p>
-      <button onclick="startTest('${t.id}',1)" class="mt-3 w-full bg-gold text-bg text-sm font-semibold py-2 rounded-lg">Start Test</button>
-    </div>`;
+
+  // ---- Section 1: Master the Menu, dish by dish ----
+  testCats = SECTIONS.filter(s => s!=='All Items' && s!=='Menu Terms'
+    && S.menu.some(it => it.section===s && (it.ingredients||[]).length>=2));
+  if(testCats.indexOf(S.testBrowse.section) === -1) S.testBrowse.section = testCats[0] || null;
+  const activeCat = S.testBrowse.section;
+
+  const pills = testCats.map((s,i) => {
+    const m = categoryMastery(s), on = s===activeCat;
+    return `<button onclick="selectTestCat(${i})" class="flex-shrink-0 px-3 py-1.5 rounded-full text-sm border ${on?'bg-gold text-bg border-gold':'border-line text-text'}">
+      ${esc(s)} <span class="${on?'text-bg/70':'text-muted'}">${m.mastered}/${m.total}</span></button>`;
   }).join('');
 
+  const dishes = activeCat
+    ? testableDishes(activeCat).sort((a,b)=>a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase()))
+    : [];
+  const dishRows = dishes.map(dishTestRow).join('') || '<p class="text-muted text-sm">No dishes to test in this category.</p>';
+
+  // ---- Section 2: Service Skills (everything that isn't a single dish) ----
+  const serviceCards = TRACKS.filter(t => t.type!=='roll').map(serviceCard).filter(Boolean).join('');
+
   pane.innerHTML = `
-    <h2 class="font-display text-2xl text-text mb-1">Choose a Test</h2>
-    <p class="text-muted text-sm mb-4">Pass at 80% to advance (90% for allergens). Level 2 unlocks after you pass Level 1.</p>
-    <div class="grid sm:grid-cols-2 gap-3">${cards}</div>`;
+    <h2 class="font-display text-2xl text-text mb-1">Master the Menu — Dish by Dish</h2>
+    <p class="text-muted text-sm mb-3">Pick a dish and pass both levels to own it. Learn a few at a time — you don't need the whole menu at once.</p>
+    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">${pills}</div>
+    <div class="space-y-2 mb-9">${dishRows}</div>
+
+    <h2 class="font-display text-2xl text-text mb-1">Service Skills</h2>
+    <p class="text-muted text-sm mb-4">The floor skills that aren't about any single dish.</p>
+    <div class="grid sm:grid-cols-2 gap-3">${serviceCards}</div>`;
 }
+
+function selectTestCat(i){ S.testBrowse.section = testCats[i] || null; renderTestHome(); }
+
+// One dish's row in the dish-by-dish browser: status + Level 1 / Level 2 buttons.
+function dishTestRow(it){
+  const l1 = dishLevelPassed(it.item_id, 1);
+  const mastered = dishMastered(it.item_id);
+  const status = mastered
+    ? `<span class="text-xs text-pass border border-pass/50 rounded px-2 py-0.5">✓ Mastered</span>`
+    : (l1 ? `<span class="text-xs text-gold border border-golddim rounded px-2 py-0.5">Level 1 passed</span>`
+          : `<span class="text-xs text-muted border border-line rounded px-2 py-0.5">Not started</span>`);
+  const l1btn = `<button onclick="startDishTest('${it.item_id}',1)" class="text-xs font-semibold px-3 py-1.5 rounded-lg ${l1?'border border-line text-muted':'bg-gold text-bg'}">Level 1${l1?' ✓':''}</button>`;
+  const l2btn = `<button onclick="${l1?`startDishTest('${it.item_id}',2)`:`lockedMsg2()`}" class="text-xs font-semibold px-3 py-1.5 rounded-lg border ${mastered?'border-pass text-pass':(l1?'border-gold text-gold':'border-line text-muted')}">${l1?('Level 2'+(mastered?' ✓':'')):'🔒 Level 2'}</button>`;
+  return `<div class="flex items-center justify-between gap-2 bg-surface border border-line rounded-lg px-3 py-2.5">
+    <div class="min-w-0"><p class="text-sm text-text truncate">${esc(it.item_name)}</p><div class="mt-1">${status}</div></div>
+    <div class="flex gap-1.5 flex-shrink-0">${l1btn}${l2btn}</div>
+  </div>`;
+}
+
+// One Service-Skills card (Menu Terms, Allergen, Description Recall, Upsell, or Coming Soon).
+function serviceCard(t){
+  if(t.type === 'soon'){
+    return `<div class="bg-surface border border-line rounded-xl p-4 opacity-60">
+      <p class="text-text font-medium">${esc(t.name)}</p>
+      <p class="text-xs text-muted mt-1">Coming Soon</p></div>`;
+  }
+  const section = trackResultSection(t);
+  const lr = lastResultFor(section, null);
+  const last = lr ? `Last: ${lr.score_percent}% · ${fmtDate(lr.date_taken)}` : 'Not taken yet';
+  const note = t.type==='allergen' ? `<p class="text-xs text-fail mt-1">Allergen accuracy is safety-critical. You need 90% to pass.</p>` : '';
+  return `<div class="bg-surface border border-line rounded-xl p-4">
+    <p class="text-text font-medium leading-tight">${esc(t.name)}</p>
+    ${note}
+    <p class="text-xs text-muted mt-2">${last}</p>
+    <button onclick="startTest('${t.id}',1)" class="mt-3 w-full bg-gold text-bg text-sm font-semibold py-2 rounded-lg">Start Test</button>
+  </div>`;
+}
+
 function lockedMsg(){ alert('Pass Level 1 with 80% or higher to unlock this.'); }
+function lockedMsg2(){ alert('Pass Level 1 for this dish first to unlock Level 2.'); }
 
 /* ===========================================================================
    TEST ENGINE
@@ -992,15 +1123,41 @@ function startTest(trackId, level){
   show($('antiCheatModal'));   // must confirm before first question loads
 }
 
+// Per-dish test: one dish, one level. Level 2 needs a Level 1 pass on THAT dish.
+function startDishTest(itemId, level){
+  const it = S.menu.find(x => x.item_id === itemId);
+  if(!it || (it.ingredients||[]).length < 2) return;
+  if(level === 2 && !dishLevelPassed(itemId, 1)) return lockedMsg2();
+  pendingTest = { dish: it, level };
+  show($('antiCheatModal'));
+}
+
 function beginTestAfterModal(){
   hide($('antiCheatModal'));
+
+  // Per-dish test: a single question on one dish, pass = get it exactly right.
+  if(pendingTest.dish){
+    const it = pendingTest.dish, level = pendingTest.level;
+    const q = (level === 2)
+      ? (function(){ const correct = it.ingredients.slice(); return { type:'wordbank', item:it, correct, bank: buildWordBank(correct) }; })()
+      : (function(){ const sq = buildSelectAll(it); return { type:'selectAll', item:it, options:sq.options, correct:sq.correct }; })();
+    S.test = {
+      track: { type:'dish', item:it }, level,
+      section: it.item_name, itemId: it.item_id, testType: 'dish',
+      pass: 100, questions: [q], idx: 0, correct: 0, wrong: 0,
+      missed: [], started: Date.now(), answered: false
+    };
+    S.testActive = true; applyNavLockStyles(); setAbandonFlag(); renderQuestion();
+    return;
+  }
+
   const { track, level } = pendingTest;
   const section = (track.type==='roll') ? trackSection(track) : trackResultSection(track);
   const pass = track.pass || PASS_DEFAULT;
 
   const questions = buildQuestions(track, level);
   S.test = {
-    track, level, section, pass,
+    track, level, section, pass, testType: track.type,
     questions, idx: 0, correct: 0, wrong: 0,
     missed: [], started: Date.now(), answered: false
   };
@@ -1078,7 +1235,7 @@ function renderQuestion(){
   const header = `
     <div class="mb-4">
       <div class="flex items-center justify-between text-xs">
-        <span class="text-gold uppercase tracking-wider">${esc(t.section)}${t.track.type==='roll' ? ' · Level ' + t.level : ''}</span>
+        <span class="text-gold uppercase tracking-wider">${esc(t.section)}${(t.track.type==='roll'||t.track.type==='dish') ? ' · Level ' + t.level : ''}</span>
         <span class="text-muted">Question ${t.idx+1} of ${t.questions.length}</span>
       </div>
       <div class="h-1.5 bg-line rounded-full mt-2 overflow-hidden"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
@@ -1312,10 +1469,11 @@ async function finishTest(){
       test_section:t.section, test_level:t.level,
       score_correct:t.correct, score_total:total,
       pass_fail: passed?'PASS':'FAIL',
-      duration_seconds:duration
+      duration_seconds:duration,
+      test_type: t.testType || '', item_id: t.itemId || ''
     });
     if(r.ok){
-      S.results.push({ test_section:t.section, test_level:t.level, score_correct:t.correct, score_total:total, score_percent:pct, pass_fail:passed?'PASS':'FAIL', date_taken:new Date().toISOString(), duration_seconds:duration });
+      S.results.push({ test_section:t.section, test_level:t.level, score_correct:t.correct, score_total:total, score_percent:pct, pass_fail:passed?'PASS':'FAIL', date_taken:new Date().toISOString(), duration_seconds:duration, test_type:t.testType||'', item_id:t.itemId||'' });
     } else { saveWarning = 'Your score is shown below but could not be saved to the server.'; }
   } catch(err){ saveWarning = 'Your score is shown below but could not be saved (connection issue).'; }
   hideLoader();
@@ -1343,8 +1501,11 @@ async function finishTest(){
       </div>
     </div>` : '';
 
-  const levelUp = (t.track.type==='roll' && t.level===1 && passed) ? `<p class="text-pass text-sm mt-2">Level 2 is now unlocked.</p>` : '';
-  const l2done  = (t.track.type==='roll' && t.level===2 && passed) ? `<p class="text-pass text-sm mt-2">You've completed both levels for ${esc(t.section)}. Your manager can see your results.</p>` : '';
+  const isTiered = (t.track.type==='roll' || t.track.type==='dish');
+  const levelUp = (isTiered && t.level===1 && passed) ? `<p class="text-pass text-sm mt-2">Level 2 is now unlocked.</p>` : '';
+  const l2done  = (t.track.type==='dish' && t.level===2 && passed)
+    ? `<p class="text-pass text-sm mt-2">You've mastered the ${esc(t.section)} — it's on your scoreboard now.</p>`
+    : ((t.track.type==='roll' && t.level===2 && passed) ? `<p class="text-pass text-sm mt-2">You've completed both levels for ${esc(t.section)}. Your manager can see your results.</p>` : '');
 
   const msg = passed
     ? `<p class="font-display text-3xl text-pass">You passed.</p>${levelUp}${l2done}`
@@ -1353,7 +1514,7 @@ async function finishTest(){
   $('tab-test').innerHTML = `
     <div class="max-w-md mx-auto text-center fade-in">
       ${saveWarning?`<p class="text-fail text-xs mb-3">${esc(saveWarning)}</p>`:''}
-      <p class="text-xs uppercase tracking-wider text-golddim">${esc(t.section)}${t.track.type==='roll'?' · Level '+t.level:''}</p>
+      <p class="text-xs uppercase tracking-wider text-golddim">${esc(t.section)}${(t.track.type==='roll'||t.track.type==='dish')?' · Level '+t.level:''}</p>
       <div class="my-5">
         <p class="font-display text-6xl text-gold">${pct}%</p>
         <p class="text-muted text-sm mt-1">${t.correct} out of ${total} correct</p>
@@ -1408,6 +1569,20 @@ function renderProgress(){
   const statCard = (label,val) => `<div class="bg-surface border border-line rounded-xl p-4 flex flex-col items-center justify-center text-center h-24">
       <p class="text-2xl text-gold font-semibold">${val}</p><p class="text-xs text-muted mt-1">${label}</p></div>`;
 
+  // Dish-mastery metrics (the headline numbers now)
+  const masteredCount = masteredDishIds().size;
+  const learningCount = learningDishIds().size;
+  const dishCats = SECTIONS.filter(s => s!=='All Items' && s!=='Menu Terms'
+    && S.menu.some(it => it.section===s && (it.ingredients||[]).length>=2));
+  const catBars = dishCats.length ? dishCats.map(s => {
+    const m = categoryMastery(s), pctm = m.total ? Math.round(100*m.mastered/m.total) : 0;
+    return `<div class="flex items-center gap-3 py-1.5">
+      <span class="text-sm text-text w-40 flex-shrink-0 truncate">${esc(s)}</span>
+      <div class="flex-1 h-2 bg-line rounded-full overflow-hidden"><div class="h-full bg-pass" style="width:${pctm}%"></div></div>
+      <span class="text-sm text-muted w-12 text-right">${m.mastered}/${m.total}</span>
+    </div>`;
+  }).join('') : `<p class="text-muted text-sm">No dishes to master yet.</p>`;
+
   const bars = secAvgs.length ? secAvgs.sort((a,b)=>b.avg-a.avg).map(s => {
     const color = s.avg>=80 ? 'bg-pass' : (s.avg<70 ? 'bg-fail' : 'bg-gold');
     return `<div class="flex items-center gap-3 py-1.5">
@@ -1447,14 +1622,14 @@ function renderProgress(){
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-      ${statCard('Overall Score', avg==null?'—':avg+'%')}
+      ${statCard('Dishes Mastered', masteredCount)}
+      ${statCard('Learning', learningCount)}
       ${statCard('Tests Taken', taken)}
-      ${statCard('Strongest', `<span class="text-sm leading-tight block">${esc(strongest)}</span>`)}
-      ${statCard('Needs Work', `<span class="text-sm leading-tight block">${esc(needs)}</span>`)}
+      ${statCard('Overall Score', avg==null?'—':avg+'%')}
     </div>
 
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Score by Section</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${bars}</div>
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Mastery by Category</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${catBars}</div>
 
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Missed Most Often</h3>
     <div class="space-y-1.5 mb-6">${missedHtml}</div>
@@ -1651,19 +1826,19 @@ async function renderLeaderboard(){
     const html = rows.length ? `
       <table class="w-full text-sm text-left">
         <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-2 font-medium">#</th><th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Tests</th><th class="pb-2 pr-2 font-medium">Avg</th><th class="pb-2 font-medium">Last Active</th>
+          <th class="pb-2 pr-2 font-medium">#</th><th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Mastered</th><th class="pb-2 pr-2 font-medium">Learning</th><th class="pb-2 font-medium">Last Active</th>
         </tr></thead>
         <tbody>${rows.map((row,i) => {
           const mine = row.name.toLowerCase()===me;
           return `<tr class="border-b border-line ${mine?'bg-gold/10':''}">
             <td class="py-2 pr-2 ${mine?'text-gold':'text-muted'}">${i+1}</td>
             <td class="py-2 pr-2 ${mine?'text-gold font-semibold':'text-text'}">${esc(row.name)}</td>
-            <td class="py-2 pr-2 text-muted">${row.tests_taken}</td>
-            <td class="py-2 pr-2 text-text">${row.avg_score}%</td>
+            <td class="py-2 pr-2 text-text font-semibold">${row.dishes_mastered||0}</td>
+            <td class="py-2 pr-2 text-muted">${row.dishes_learning||0}</td>
             <td class="py-2 text-muted whitespace-nowrap">${fmtDate(row.last_active)}</td>
           </tr>`;
         }).join('')}</tbody>
-      </table>` : `<p class="text-muted text-sm">No results yet. Be the first to take a test.</p>`;
+      </table>` : `<p class="text-muted text-sm">No dishes mastered yet. Be the first — pass both levels on any dish.</p>`;
     $('lbBody').innerHTML = html;
   } catch(err){
     $('lbBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the leaderboard. Check your connection.</p>`;

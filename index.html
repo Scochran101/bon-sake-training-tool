@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Bon Sake Sushi &amp; Bar — Training Tool</title>
+<title>Bon Sake Sushi &amp; Bar Training Tool</title>
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -177,7 +177,7 @@
     <h2 class="font-display text-2xl text-text leading-snug">This isn't an open book test.<br>Stay until it's complete.</h2>
     <p class="text-muted text-sm mt-4">Leaving this test early will be recorded and your manager will be able to see it.</p>
     <button id="antiCheatStart" class="mt-6 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">
-      I Understand — Start Test
+      I Understand. Start Test
     </button>
   </div>
 </div>
@@ -216,7 +216,7 @@ const S = {
   pairingsAvailable: false,
   activeTab: 'study',
   testActive: false,     // true while a test is running (locks nav)
-  study: { section: 'All Items', itemId: null, showDetailMobile: false },
+  study: { section: null, itemId: null, showDetailMobile: false },   // null section = category picker
   testBrowse: { section: null },   // selected category in the dish-by-dish Test tab
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
@@ -225,81 +225,81 @@ const S = {
 // ---- The 14 "Know the Menu" flashcards (hardcoded per brief) --------------
 const FLASHCARDS = [
   { term:'NIGIRI',
-    def:'Fresh raw fish served over a small hand-pressed ball of seasoned rice. Ordered by the piece (2pc unless noted). The fish is the star — the rice is just the vehicle.',
-    fact:'Nigiri means "to grip" in Japanese — it is named for the way the chef hand-presses each piece, and it began as fast street food in 1800s Tokyo, eaten with the fingers.' },
+    def:'Fresh raw fish served over a small hand-pressed ball of seasoned rice. Ordered by the piece (2pc unless noted). The fish is the star; the rice is just the vehicle.',
+    fact:'Nigiri means "to grip" in Japanese, named for the way the chef presses each piece by hand.' },
   { term:'SASHIMI',
-    def:'Fresh raw fish served alone — no rice, no roll. Thin sliced, pure protein. For the guest who wants the cleanest expression of the fish.',
-    fact:'Sashimi means "pierced body." One theory says chefs once pinned the fish\'s own tail and fin to the slices so diners could tell which species they were eating.' },
+    def:'Fresh raw fish served alone. No rice, no roll. Thin sliced, pure protein. For the guest who wants the cleanest expression of the fish.',
+    fact:'Sashimi means "pierced body" in Japanese.' },
   { term:'HOSOMAKI',
     def:'A thin roll with seaweed (nori) on the outside. Usually one or two ingredients. Simple, traditional. The seaweed wrapper is visible and intentional.',
-    fact:'Hosomaki literally means "thin roll." The nori goes on the outside because traditional Japanese rolls were never made rice-out — that style was invented in America.' },
+    fact:'Hosomaki means "thin roll," and it is the classic style served in Japan.' },
   { term:'URAMAKI',
     def:'A roll with rice on the outside and seaweed on the inside. Most American-style rolls are uramaki. The rice is what you see first.',
-    fact:'Uramaki means "inside-out roll." It was reportedly invented in 1960s Los Angeles to hide the seaweed, which early American diners were wary of.' },
+    fact:'Uramaki means "inside-out roll," first made in Los Angeles in the 1960s.' },
   { term:'TEMAKI',
-    def:'A hand roll — seaweed cone shape, filled with ingredients. Not cut into pieces. Meant to be eaten immediately before the seaweed gets soft.',
-    fact:'Temaki means "hand roll." It has no fixed shape because it is meant to be eaten within minutes — wait too long and the cone of nori turns chewy instead of crisp.' },
+    def:'A hand roll. Seaweed cone shape, filled with ingredients. Not cut into pieces. Meant to be eaten immediately before the seaweed gets soft.',
+    fact:'Temaki means "hand roll," and it is meant to be eaten right away, while the seaweed is still crisp.' },
   { term:'SIGNATURE MAKI',
     def:"Bon Sake's house specialty rolls. Larger, more complex builds with premium ingredients. These are the high-ticket items.",
-    fact:'The word "maki" just means "roll" — named for the makisu, the bamboo mat that has rolled everything from sushi to omelets in Japanese kitchens for centuries.' },
+    fact:'The word "maki" simply means "roll," named for the bamboo mat used to roll it.' },
   { term:'SIGNATURE SASHIMI',
-    def:'Premium raw fish preparations with house-made sauces and garnishes. Not your standard sashimi — these are plated dishes with layered flavors.',
-    fact:'Plating sashimi is its own art form in Japan called moritsuke — slices are traditionally arranged in odd numbers, since even numbers are associated with funerals.' },
+    def:'Premium raw fish preparations with house-made sauces and garnishes. Not your standard sashimi; these are plated dishes with layered flavors.',
+    fact:'In Japan, sashimi slices are usually plated in odd numbers.' },
   { term:'SIGNATURE NIGIRI',
-    def:"One piece per order. Bon Sake's elevated take on traditional nigiri — house sauces, special preparations, premium toppings. Priced per piece.",
-    fact:'A skilled sushi chef presses each nigiri to a precise density — firm enough to lift in one piece, loose enough to fall apart the moment it touches your tongue.' },
+    def:"One piece per order. Bon Sake's elevated take on traditional nigiri: house sauces, special preparations, premium toppings. Priced per piece.",
+    fact:'A good nigiri is pressed just firm enough to hold together until it reaches your mouth.' },
   { term:'SOY PAPER',
     def:'A thin sheet made from soy, used instead of nori (seaweed) on many Signature Maki rolls. Lighter flavor, slightly sweet.',
-    fact:'Soy paper (mamenori) is made by pressing soybeans into thin sheets, and it comes in colors — pink, green, orange — tinted naturally by ingredients like beet and spinach.' },
+    fact:'Soy paper is made from pressed soybeans and comes in colors like pink and green.' },
   { term:'PONZU',
-    def:'A citrus-based soy sauce — lighter and more acidic than regular soy. Used frequently across the menu as a finishing sauce or dipping component.',
-    fact:'The "pon" in ponzu comes from the Dutch word "pons," meaning a citrus punch — a trace of the Dutch traders who were Japan\'s main link to the West for over 200 years.' },
-  { term:'YUZU KOSHU',
-    def:'A Japanese condiment made from yuzu citrus peel, chili, and salt. Bright, spicy, aromatic. Appears in several dishes — it adds heat and citrus simultaneously.',
-    fact:'Yuzu kosho is fermented for days or weeks to marry the citrus, chili, and salt — and despite "kosho" usually meaning pepper, it contains no black pepper at all.' },
+    def:'A citrus-based soy sauce, lighter and more acidic than regular soy. Used frequently across the menu as a finishing sauce or dipping component.',
+    fact:'The "pon" in ponzu comes from a Dutch word for citrus punch.' },
+  { term:'YUZU KOSHO',
+    def:'A Japanese condiment made from yuzu citrus peel, chili, and salt. Bright, spicy, aromatic. Appears in several dishes; it adds heat and citrus at the same time.',
+    fact:'Yuzu kosho is fermented for days or weeks to marry the citrus, chili, and salt.' },
   { term:'TOBIKO',
-    def:'Flying fish roe — small, crunchy, briny fish eggs used as a topping. Comes in varieties: regular (orange), habanero (red/spicy), wasabi (green).',
-    fact:'Tobiko gets its color from what is mixed in — squid ink turns it black, wasabi turns it green, yuzu turns it pale gold — and each egg is under a millimeter across.' },
+    def:'Flying fish roe: small, crunchy, briny fish eggs used as a topping. Comes in varieties: regular (orange), habanero (red, spicy), wasabi (green).',
+    fact:'Tobiko gets its color from what it is mixed with: squid ink makes it black, wasabi makes it green.' },
   { term:'FOIE GRAS',
-    def:'Seared duck liver — rich, buttery, luxurious. Appears in several premium items including the Bimini Bay, High Roller, and Foie Gras nigiri.',
-    fact:'Foie gras is French for "fat liver," and the practice of fattening waterfowl for their livers dates back more than 4,000 years to ancient Egypt.' },
+    def:'Seared duck liver: rich, buttery, luxurious. Appears in several premium items including the Bimini Bay, High Roller, and Foie Gras nigiri.',
+    fact:'Foie gras is French for "fat liver," and people have prized it for over 4,000 years.' },
   { term:'DASHI',
     def:'A Japanese cooking stock made from kombu seaweed and dried fish. The base of many broths and sauces at Bon Sake. Subtle, savory, umami-forward.',
-    fact:'Dashi is where umami was discovered — in 1908 a Japanese chemist studying why kombu dashi tasted so savory isolated glutamate, naming the "fifth taste" and later inventing MSG.' }
+    fact:'Umami, the "fifth taste," was discovered in 1908 by a scientist studying dashi.' }
 ];
 
 // ---- The 10 Upsell scenarios (hardcoded per brief) ------------------------
 const UPSELL = [
   { s:'A guest orders the Teriyaki Chicken and a side of Fried Rice.',
-    o:['Would you like to add a protein to your fried rice — tenderloin, pork belly, chicken, or shrimp?','Can I get you anything else?','Great choice!','Would you like dessert?'], c:0,
-    e:"The Fried Rice protein add-on is a direct upsell — up to $7.95 additional. Always name the options. Guests who hear them say yes more than guests who are just asked 'anything else?'" },
+    o:['Would you like to add a protein to your fried rice: tenderloin, pork belly, chicken, or shrimp?','Can I get you anything else?','Great choice!','Would you like dessert?'], c:0,
+    e:"The Fried Rice protein add-on is a direct upsell, up to $7.95 additional. Always name the options. Guests who hear them say yes more than guests who are just asked 'anything else?'" },
   { s:'A guest orders the Filet.',
     o:['Would you like to add two diver scallops for $16.95 or lump blue crab for $9.95?','Would you like a salad?','That\'s a great choice.','Would you like a drink?'], c:0,
-    e:'The Filet has two listed add-ons. These are printed on the menu — your job is to say them out loud. Guests rarely read add-ons. Saying them converts.' },
+    e:'The Filet has two listed add-ons. These are printed on the menu; your job is to say them out loud. Guests rarely read add-ons. Saying them converts.' },
   { s:"A guest says they've never been here before and they love seafood.",
-    o:["You should try the High Roller — it's our most indulgent roll with lump blue crab, tuna, foie gras, and truffle honey.",'Everything is good.','What kind of seafood do you like?','Do you like sushi?'], c:0,
+    o:["You should try the High Roller. It's our most indulgent roll with lump blue crab, tuna, foie gras, and truffle honey.",'Everything is good.','What kind of seafood do you like?','Do you like sushi?'], c:0,
     e:'First-timers who love seafood are your best upsell opportunity. Lead with the highest-ticket premium item with confidence. The High Roller sells itself if you describe it right.' },
   { s:"A table of four is sharing several rolls but hasn't ordered any small plates.",
     o:['Have you had a chance to look at our small plates? The Kimchi Crab Cake and the Scallops are two of my favorites for the table to share.','Are you ready to order?','Can I get you more water?','Would you like to see the menu again?'], c:0,
-    e:'Shared tables are the highest add-on opportunity. Name two specific items — not the whole menu. Specificity drives decisions.' },
+    e:'Shared tables are the highest add-on opportunity. Name two specific items, not the whole menu. Specificity drives decisions.' },
   { s:'A guest orders the Spicy Tuna roll and a water.',
-    o:['We have a great sake selection that pairs really well with spicy tuna — can I tell you about a couple of options?','Water is fine.','Would you like a beer?','Are you sure you don\'t want anything else to drink?'], c:0,
-    e:"A guest ordering water isn't necessarily a non-drinker — they may not know what's available. A specific, confident offer converts better than a generic question." },
+    o:['We have a great sake selection that pairs really well with spicy tuna. Can I tell you about a couple of options?','Water is fine.','Would you like a beer?','Are you sure you don\'t want anything else to drink?'], c:0,
+    e:"A guest ordering water isn't necessarily a non-drinker; they may not know what's available. A specific, confident offer converts better than a generic question." },
   { s:'A guest finishes their rolls and looks satisfied.',
-    o:['We have a few more things coming out — can I bring you a Bon Bowl or Sake Bowl to round out the meal?','Can I get you your check?','How was everything?','Would you like more water?'], c:0,
+    o:['We have a few more things coming out. Can I bring you a Bon Bowl or Sake Bowl to round out the meal?','Can I get you your check?','How was everything?','Would you like more water?'], c:0,
     e:"A satisfied guest is an open guest. The poke bowls are mid-ticket items that are easy to add. Don't go straight to the check." },
   { s:"A guest asks 'What's the difference between nigiri and sashimi?'",
-    o:['Nigiri is raw fish over rice — two pieces per order. Sashimi is just the fish, sliced thin, no rice. Both are fresh and raw.','They\'re both raw fish.','I\'ll find out for you.','They\'re pretty similar.'], c:0,
+    o:['Nigiri is raw fish over rice, two pieces per order. Sashimi is just the fish, sliced thin, no rice. Both are fresh and raw.','They\'re both raw fish.','I\'ll find out for you.','They\'re pretty similar.'], c:0,
     e:"This is one of the most common guest questions. If you can't answer it cleanly and confidently, you lose credibility at the table. Know it cold." },
   { s:"A guest says 'I'm not a big raw fish person.'",
-    o:['We have a lot of cooked options — the Rock and Roll has tempura shrimp, the Voodoo has spicy salmon and tempura shrimp, and from the grill the Wagyu Sliders are incredible. What sounds good?','We do have cooked options.','Most people end up liking it.','The California Roll is cooked.'], c:0,
+    o:['We have a lot of cooked options. The Rock and Roll has tempura shrimp, the Voodoo has spicy salmon and tempura shrimp, and from the grill the Wagyu Sliders are incredible. What sounds good?','We do have cooked options.','Most people end up liking it.','The California Roll is cooked.'], c:0,
     e:"Never let a guest feel like the menu isn't for them. Name three specific items across price points. Give them a reason to stay and spend." },
   { s:"A guest asks 'What's your most popular roll?'",
-    o:["The Bimini Bay is one of our most popular — it has seared salmon, tempura shrimp, foie gras, and bacon jam. It's rich and a little different from anything else you'll find. The High Roller is also incredible if you want to go all out.",'We have a lot of good ones.','That\'s hard to say — they\'re all great.','The California Roll is always popular.'], c:0,
-    e:'This question is an invitation to sell. Name two premium rolls with confidence. The guest who asks this question is ready to be guided — guide them to the high-ticket items.' },
+    o:["The Bimini Bay is one of our most popular. It has seared salmon, tempura shrimp, foie gras, and bacon jam. It's rich and a little different from anything else you'll find. The High Roller is also incredible if you want to go all out.",'We have a lot of good ones.','That\'s hard to say; they\'re all great.','The California Roll is always popular.'], c:0,
+    e:'This question is an invitation to sell. Name two premium rolls with confidence. The guest who asks this question is ready to be guided, so guide them to the high-ticket items.' },
   { s:'A group of six is seated and one person says they don\'t eat fish.',
-    o:['We have you covered — the Wagyu Sliders, Chicken Karaage, Crispy Beef Gyudon, and Chili Garlic Udon are all excellent. I can also add chicken, pork belly, or tenderloin to the fried rice or udon.','We\'re mainly a sushi restaurant.','We might have a few options.','The veggie roll is an option.'], c:0,
-    e:'A non-fish eater at a sushi restaurant needs to feel welcomed immediately. Name real dishes with confidence. This is also a table of six — a 20% auto-gratuity applies. Every add-on matters.' }
+    o:['We have you covered. The Wagyu Sliders, Chicken Karaage, Crispy Beef Gyudon, and Chili Garlic Udon are all excellent. I can also add chicken, pork belly, or tenderloin to the fried rice or udon.','We\'re mainly a sushi restaurant.','We might have a few options.','The veggie roll is an option.'], c:0,
+    e:'A non-fish eater at a sushi restaurant needs to feel welcomed immediately. Name real dishes with confidence. This is also a table of six, so a 20% auto-gratuity applies. Every add-on matters.' }
 ];
 
 // ---- Allergen option labels (fixed, no decoys) ----------------------------
@@ -317,27 +317,22 @@ const ALLERGEN_OPTIONS = [
 const SECTIONS = [
   'All Items','Signature Maki','Signature Sashimi','Signature Nigiri','Uramaki & Temaki',
   'Hosomaki','Nigiri & Sashimi','Sushi Small Plates','Sushi Starters','Small Plates',
-  'Soups & Salads','Large Plates','Yaki — From the Grill','Menu Terms'
+  'Soups & Salads','Large Plates','Yaki — From the Grill',
+  'Signature Cocktails','Mocktails','Beers & Seltzers','Menu Terms'
 ];
 
-// ---- Test tracks ----------------------------------------------------------
+// ---- Test tracks (Service Skills; dish tests come from the menu itself) ----
 const TRACKS = [
-  { id:'tm_sig_maki',  name:'Roll Components — Signature Maki',      type:'roll', section:'Signature Maki',     levels:true },
-  { id:'tm_sig_sash',  name:'Roll Components — Signature Sashimi',   type:'roll', section:'Signature Sashimi',  levels:true },
-  { id:'tm_sig_nig',   name:'Roll Components — Signature Nigiri',    type:'roll', section:'Signature Nigiri',   levels:true },
-  { id:'tm_uramaki',   name:'Roll Components — Uramaki & Temaki',    type:'roll', section:'Uramaki & Temaki',   levels:true },
-  // Hosomaki and Nigiri & Sashimi are intentionally omitted: every dish in those
-  // sections has a single ingredient, so with the 2+-ingredient rule they have
-  // nothing to test. (Defensively, renderTestHome also hides any empty roll track.)
-  { id:'tm_smallplt',  name:'Roll Components — Sushi Small Plates',  type:'roll', section:'Sushi Small Plates', levels:true },
-  { id:'tm_full',      name:'Roll Components — Full Menu',           type:'roll', section:'*ALL*',              levels:true },
-  { id:'tm_know',      name:'Menu Terms', type:'know',  levels:false },
-  { id:'tm_allergen',  name:'Allergen Awareness',                    type:'allergen', levels:false, pass:PASS_ALLERGEN },
-  { id:'tm_desc',      name:'Description Recall',                     type:'description', levels:false },
-  { id:'tm_upsell',    name:'Upsell Test',                           type:'upsell', levels:false },
-  { id:'tm_liquor',    name:'🍸 Liquor Categories',                  type:'soon' },
-  { id:'tm_bar',       name:'🍹 Bartending Basics',                  type:'soon' }
+  { id:'tm_know',     name:'Menu Terms',           type:'know',        levels:false },
+  { id:'tm_allergen', name:'Allergen Awareness',   type:'allergen',    levels:false, pass:PASS_ALLERGEN },
+  { id:'tm_desc',     name:'Description Recall',   type:'description', levels:false },
+  { id:'tm_upsell',   name:'Upsell Test',          type:'upsell',      levels:false },
+  { id:'tm_beers',    name:'Beer & Seltzer List',  type:'beers',       levels:false },
+  { id:'tm_bar',      name:'🍹 Bartending Basics', type:'soon' }
 ];
+
+// Beers we do NOT serve, mixed into the Beer & Seltzer List test as decoys.
+const BEER_DECOYS = ['Corona Extra','Modelo Especial','Heineken','Blue Moon','Stella Artois','Guinness','Dos Equis','White Claw','Truly','Yuengling'];
 
 /* ===========================================================================
    LOGO (recreated as SVG — brushstroke enso circle with a bonsai silhouette)
@@ -391,7 +386,7 @@ function shuffle(arr){ const a = arr.slice(); for(let i=a.length-1;i>0;i--){ con
 function sample(arr, n){ return shuffle(arr).slice(0, n); }
 function titleCap(s){ return s.replace(/\b\w/g, c => c.toUpperCase()); }
 function fmtPrice(p){ return (p==='' || p==null) ? '' : '$' + Number(p).toFixed(2); }
-function fmtDate(iso){ if(!iso) return '—'; const d = new Date(iso); if(isNaN(d)) return '—'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+function fmtDate(iso){ if(!iso) return '-'; const d = new Date(iso); if(isNaN(d)) return '-'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
 function userKey(){ return ('bonsake_stats_' + (S.user?S.user.first_name:'') + '_' + (S.user?S.user.last_name:'')).toLowerCase(); }
 
 /* ===========================================================================
@@ -462,7 +457,7 @@ async function doLogin(first, last, pin){
     showLoader('Loading the menu…');
     const m = await apiGet('getMenu');
     if(!m.ok) return { ok:false, error:'Could not load the menu. Check your connection and try again.' };
-    S.menu = m.food || [];
+    S.menu = (m.food || []).concat(m.drinks || []);   // drinks are menu items too
     S.drinksAvailable = !!m.drinksAvailable;
     S.pairingsAvailable = !!m.pairingsAvailable;
     canonicalizeMenu();        // collapse plural-duplicate ingredients before anything reads them
@@ -542,7 +537,7 @@ function logout(){
   S.dishNotes = {}; S.testBrowse = { section:null };
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
-  S.study = { section:'All Items', itemId:null, showDetailMobile:false };
+  S.study = { section:null, itemId:null, showDetailMobile:false };
   applyNavLockStyles();
   $('loginForm').reset();
   hide($('view-main'));
@@ -559,22 +554,37 @@ function logout(){
 // real kitchen distinction (e.g. green onion vs scallion) are intentionally
 // left alone. Keys must be lowercase.
 const ING_CANON = {
-  'scallions': 'scallion',
-  'carrots':   'carrot'
+  'scallions':      'scallion',
+  'carrots':        'carrot',
+  'shrimp tempura': 'tempura shrimp',   // same item, two word orders across dishes
+  'yuzu koshu':     'yuzu kosho'        // same condiment, two spellings across dishes
 };
 function canonIng(s){
   const t = String(s == null ? '' : s).trim();
   return ING_CANON[t.toLowerCase()] || t;
 }
-// Rewrites every menu item's ingredient list to canonical spellings, dropping
-// any duplicate that collapses onto an ingredient already in the same item.
+// Menu-style capitalization: "sweet and spicy mango puree" -> "Sweet and Spicy
+// Mango Puree". Small connector words stay lowercase; BBQ stays all caps.
+const TITLE_SMALL = new Set(['and','or','of','de','the','a','an','with','in']);
+const TITLE_FORCE = { 'bbq':'BBQ' };
+function titleIngredient(s){
+  return String(s || '').split(' ').map((w,i) => {
+    const lw = w.toLowerCase();
+    if(TITLE_FORCE[lw]) return TITLE_FORCE[lw];
+    if(i > 0 && TITLE_SMALL.has(lw)) return lw;
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  }).join(' ');
+}
+// Rewrites every menu item's ingredient list to canonical spellings in menu
+// capitalization, dropping any duplicate that collapses onto an ingredient
+// already in the same item. Grading is unaffected: comparisons are lowercase.
 function canonicalizeMenu(){
   S.menu.forEach(it => {
     const seen = new Set(), out = [];
     (it.ingredients || []).forEach(ing => {
       const c = canonIng(ing); if(!c) return;
       const k = c.toLowerCase();
-      if(!seen.has(k)){ seen.add(k); out.push(c); }
+      if(!seen.has(k)){ seen.add(k); out.push(titleIngredient(c)); }
     });
     it.ingredients = out;
   });
@@ -685,17 +695,36 @@ function applyNavLockStyles(){
 =========================================================================== */
 function renderStudy(){
   const pane = $('tab-study');
-  const pills = SECTIONS.concat(['🍸 Drinks','🍶 Pairings']);
-  const pillBar = pills.map(sec => {
-    const active = sec === S.study.section;
-    return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
-      class="whitespace-nowrap px-3.5 py-1.5 rounded-full text-sm border transition-colors ${active?'bg-gold text-bg border-gold font-semibold':'bg-chip text-muted border-line hover:text-text'}">${esc(sec)}</button>`;
-  }).join('');
-
+  if(!S.study.section){ renderStudyCats(pane); return; }
   pane.innerHTML = `
-    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-3 -mx-1 px-1">${pillBar}</div>
-    <div id="studyBody" class="mt-2"></div>`;
+    <button onclick="backToCategories()" class="text-gold text-sm mb-3">&larr; Categories</button>
+    <h2 class="font-display text-2xl text-text mb-3">${esc(S.study.section)}</h2>
+    <div id="studyBody"></div>`;
   renderStudyBody();
+}
+
+// The Study landing screen: one large card per menu category.
+function renderStudyCats(pane){
+  const cards = SECTIONS.filter(s => s !== 'All Items').map(sec => {
+    const n = (sec === 'Menu Terms') ? FLASHCARDS.length : sectionItems(sec).length;
+    if(n === 0) return '';
+    const sub = (sec === 'Menu Terms') ? `${n} terms` : `${n} item${n===1?'':'s'}`;
+    return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
+      class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+      <p class="text-text font-medium text-base leading-snug">${esc(sec)}</p>
+      <p class="text-muted text-xs mt-1.5">${sub}</p>
+    </button>`;
+  }).join('');
+  pane.innerHTML = `
+    <h2 class="font-display text-2xl text-text mb-1">Study the Menu</h2>
+    <p class="text-muted text-sm mb-4">Pick a category. Learn it one dish at a time.</p>
+    <div class="grid grid-cols-2 gap-3">${cards}</div>
+    <p class="text-center mt-6"><button onclick="selectSection('All Items')" class="text-gold text-sm">Browse every item in one list &rarr;</button></p>`;
+}
+
+function backToCategories(){
+  S.study.section = null; S.study.itemId = null; S.study.showDetailMobile = false;
+  renderStudy();
 }
 
 function selectSection(sec){
@@ -714,10 +743,6 @@ function renderStudyBody(){
   const body = $('studyBody');
   const sec = S.study.section;
 
-  if(sec === '🍸 Drinks' || sec === '🍶 Pairings'){
-    body.innerHTML = comingSoonBlock(sec === '🍸 Drinks' ? 'Drinks' : 'Pairings');
-    return;
-  }
   if(sec === 'Menu Terms'){ renderFlashcards(body); return; }
 
   const items = sectionItems(sec);
@@ -804,7 +829,7 @@ function renderItemDetail(id){
   const pairingHtml = it.pairing_drink
     ? `<div>
          <p class="text-xs uppercase tracking-wider text-golddim mb-1">Suggested Pairing</p>
-         <p class="text-text text-sm"><span class="text-gold">${esc(it.pairing_drink)}</span>${it.pairing_note?(' — '+esc(it.pairing_note)):''}</p>
+         <p class="text-text text-sm"><span class="text-gold">${esc(it.pairing_drink)}</span>${it.pairing_note?(' · '+esc(it.pairing_note)):''}</p>
        </div>`
     : '';
 
@@ -827,18 +852,17 @@ function renderItemDetail(id){
 
     ${photo ? `<div class="mt-4" data-photo>${photo}</div>` : ''}
 
-    <hr class="border-line my-5"/>
-
+    ${it.ingredients.length ? `<hr class="border-line my-5"/>
     <p class="text-xs uppercase tracking-wider text-golddim mb-2">What's In It</p>
-    <div>${chips}</div>
+    <div>${chips}</div>` : ''}
 
     ${extrasHtml}
 
     <hr class="border-line my-5"/>
     <div id="dishNotesWrap">${renderDishNotes(it.item_id)}</div>
 
-    <button onclick="openQuickPractice('${it.item_id}')"
-      class="mt-6 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">Quick Practice →</button>
+    ${it.ingredients.length >= 2 ? `<button onclick="openQuickPractice('${it.item_id}')"
+      class="mt-6 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">Quick Practice →</button>` : ''}
 
     <div class="flex justify-between mt-5 text-sm">
       <button ${prev?'':'disabled'} onclick="${prev?`selectItem('${prev.item_id}')`:''}" class="${prev?'text-gold hover:text-[#d8b85e]':'text-line cursor-default'}">&larr; ${prev?esc(prev.item_name):''}</button>
@@ -858,7 +882,7 @@ function renderDishNotes(itemId){
   return `
     <p class="text-xs uppercase tracking-wider text-golddim mb-1">Your Words</p>
     <p class="text-xs text-muted mb-2">As you taste it, note how you'd describe it to a guest. These are yours.</p>
-    <div class="mb-2">${chips || '<span class="text-muted text-sm">No words yet — add a few below.</span>'}</div>
+    <div class="mb-2">${chips || '<span class="text-muted text-sm">No words yet. Add a few below.</span>'}</div>
     <input id="chipInput_${itemId}" onkeydown="if(event.key==='Enter'){event.preventDefault();addChip('${itemId}');}"
       placeholder="Add a word or phrase, then press Enter"
       class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text mb-2 outline-none focus:border-gold"/>
@@ -920,14 +944,14 @@ async function showTeamWords(itemId){
 function photoPlaceholder(){
   return `<div class="w-full h-52 rounded-lg border border-dashed border-line bg-bg flex flex-col items-center justify-center text-center px-4">
     <svg class="w-8 h-8 text-line mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/><path d="M8 5l1.2-2h5.6L16 5"/></svg>
-    <p class="text-muted text-xs">Photo coming soon — add image URL to Google Sheet</p>
+    <p class="text-muted text-xs">Photo coming soon. Add an image URL to the Google Sheet.</p>
   </div>`;
 }
 function photoPlaceholderEl(){ const d=document.createElement('div'); d.innerHTML=photoPlaceholder(); return d.firstElementChild; }
 
 function comingSoonBlock(label){
   return `<div class="bg-surface border border-line rounded-xl p-10 text-center mt-6">
-    <p class="font-display text-2xl text-gold mb-2">${esc(label)} — Coming Soon</p>
+    <p class="font-display text-2xl text-gold mb-2">${esc(label)}: Coming Soon</p>
     <p class="text-muted text-sm">This section isn't loaded yet. Once ${esc(label.toLowerCase())} are added to the Google Sheet, they'll appear here automatically.</p>
   </div>`;
 }
@@ -1016,7 +1040,7 @@ function qpCheck(id){
   const sellTxt = it.sell_description ? `<div class="border-l-2 border-gold pl-3 mt-3"><p class="text-xs uppercase tracking-wider text-golddim mb-1">Here's how to sell it</p><p class="font-display italic text-text text-sm leading-relaxed">${esc(it.sell_description)}</p></div>` : '';
   $('qpResult').innerHTML = (allRight
     ? `<p class="text-pass font-semibold">Correct! You nailed it.</p>`
-    : `<p class="text-fail font-semibold">Not quite — green are correct, red were wrong.</p>`) + sellTxt;
+    : `<p class="text-fail font-semibold">Not quite. Green are correct, red were wrong.</p>`) + sellTxt;
   $('qpCheck').classList.add('hidden');
 }
 function closeQuickPractice(){
@@ -1038,13 +1062,16 @@ function buildSelectAll(item){
   const total = optionCount(correct.length);
   const need = Math.max(0, total - correct.length);
 
-  // decoy pool: ingredients from OTHER items, not present in this item, unique
+  // decoy pool: ingredients from OTHER items, not present in this item, unique.
+  // The matchRecall guard also rejects any decoy the spelling-lenient matcher
+  // would read as one of this dish's real ingredients (e.g. a word-order or
+  // spelling variant), so the same ingredient can never appear twice.
   const poolSet = new Set();
   S.menu.forEach(it => {
     if(it.item_id === item.item_id) return;
     it.ingredients.forEach(ing => {
       const low = ing.toLowerCase();
-      if(!correctLower.has(low)) poolSet.add(ing);
+      if(!correctLower.has(low) && !matchRecall(ing, correct)) poolSet.add(ing);
     });
   });
   // de-dup case-insensitively
@@ -1052,7 +1079,7 @@ function buildSelectAll(item){
   poolSet.forEach(ing => { const l = ing.toLowerCase(); if(!seen.has(l)){ seen.add(l); pool.push(ing); } });
 
   const decoys = sample(pool, need);
-  const options = shuffle(correct.concat(decoys));
+  const options = correct.concat(decoys).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   return { item, options, correct: new Set(correct) };
 }
 
@@ -1099,43 +1126,48 @@ function categoryMastery(section){
 
 function trackSection(track){ return track.type==='roll' ? (track.section==='*ALL*' ? 'Full Menu' : track.section) : trackResultSection(track); }
 function trackResultSection(track){
-  return { know:'Menu Terms', allergen:'Allergen Awareness', description:'Description Recall', upsell:'Upsell Test' }[track.type] || track.name;
+  return { know:'Menu Terms', allergen:'Allergen Awareness', description:'Description Recall', upsell:'Upsell Test', beers:'Beer List' }[track.type] || track.name;
 }
 
 let testCats = [];   // categories currently shown in the dish-by-dish browser
 
 function renderTestHome(){
   const pane = $('tab-test');
-
-  // ---- Section 1: Master the Menu, dish by dish ----
   testCats = SECTIONS.filter(s => s!=='All Items' && s!=='Menu Terms'
     && S.menu.some(it => it.section===s && (it.ingredients||[]).length>=2));
-  if(testCats.indexOf(S.testBrowse.section) === -1) S.testBrowse.section = testCats[0] || null;
-  const activeCat = S.testBrowse.section;
+  const activeCat = (testCats.indexOf(S.testBrowse.section) !== -1) ? S.testBrowse.section : null;
+  S.testBrowse.section = activeCat;
 
-  const pills = testCats.map((s,i) => {
-    const m = categoryMastery(s), on = s===activeCat;
-    return `<button onclick="selectTestCat(${i})" class="flex-shrink-0 px-3 py-1.5 rounded-full text-sm border ${on?'bg-gold text-bg border-gold':'border-line text-text'}">
-      ${esc(s)} <span class="${on?'text-bg/70':'text-muted'}">${m.mastered}/${m.total}</span></button>`;
-  }).join('');
+  // ---- Home screen: category cards + Service Skills ----
+  if(!activeCat){
+    const cards = testCats.map((s,i) => {
+      const m = categoryMastery(s);
+      return `<button onclick="selectTestCat(${i})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+        <p class="text-text font-medium text-base leading-snug">${esc(s)}</p>
+        <p class="text-xs mt-1.5 ${m.mastered>0?'text-pass':'text-muted'}">${m.mastered} of ${m.total} mastered</p>
+      </button>`;
+    }).join('');
+    const serviceCards = TRACKS.map(serviceCard).filter(Boolean).join('');
+    pane.innerHTML = `
+      <h2 class="font-display text-2xl text-text mb-1">Master the Menu, Dish by Dish</h2>
+      <p class="text-muted text-sm mb-4">Pick a category, then a dish. Level 1: spot what's in it. Level 2: name every ingredient from memory, plus its allergens. Learn a few at a time.</p>
+      <div class="grid grid-cols-2 gap-3 mb-9">${cards}</div>
 
-  const dishes = activeCat
-    ? testableDishes(activeCat).sort((a,b)=>a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase()))
-    : [];
+      <h2 class="font-display text-2xl text-text mb-1">Service Skills</h2>
+      <p class="text-muted text-sm mb-4">The floor skills that aren't about any single dish.</p>
+      <div class="grid sm:grid-cols-2 gap-3">${serviceCards}</div>`;
+    return;
+  }
+
+  // ---- Inside a category: its dishes ----
+  const m = categoryMastery(activeCat);
+  const dishes = testableDishes(activeCat).sort((a,b)=>a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase()));
   const dishRows = dishes.map(dishTestRow).join('') || '<p class="text-muted text-sm">No dishes to test in this category.</p>';
-
-  // ---- Section 2: Service Skills (everything that isn't a single dish) ----
-  const serviceCards = TRACKS.filter(t => t.type!=='roll').map(serviceCard).filter(Boolean).join('');
-
   pane.innerHTML = `
-    <h2 class="font-display text-2xl text-text mb-1">Master the Menu — Dish by Dish</h2>
-    <p class="text-muted text-sm mb-3">Pick a dish and pass both levels to own it. Level 1: spot what's in it. Level 2: name every ingredient from memory, plus its allergens. Learn a few at a time — you don't need the whole menu at once.</p>
-    <div class="flex gap-2 overflow-x-auto no-scrollbar pb-2 mb-3">${pills}</div>
-    <div class="space-y-2 mb-9">${dishRows}</div>
-
-    <h2 class="font-display text-2xl text-text mb-1">Service Skills</h2>
-    <p class="text-muted text-sm mb-4">The floor skills that aren't about any single dish.</p>
-    <div class="grid sm:grid-cols-2 gap-3">${serviceCards}</div>`;
+    <button onclick="selectTestCat(-1)" class="text-gold text-sm mb-3">&larr; Categories</button>
+    <h2 class="font-display text-2xl text-text mb-1">${esc(activeCat)}</h2>
+    <p class="text-muted text-sm mb-3">${m.mastered} of ${m.total} mastered. Pass both levels on a dish to own it.</p>
+    <div class="space-y-2">${dishRows}</div>`;
 }
 
 function selectTestCat(i){ S.testBrowse.section = testCats[i] || null; renderTestHome(); }
@@ -1158,6 +1190,7 @@ function dishTestRow(it){
 
 // One Service-Skills card (Menu Terms, Allergen, Description Recall, Upsell, or Coming Soon).
 function serviceCard(t){
+  if(t.type === 'beers' && !S.menu.some(it => it.section === 'Beers & Seltzers')) return '';
   if(t.type === 'soon'){
     return `<div class="bg-surface border border-line rounded-xl p-4 opacity-60">
       <p class="text-text font-medium">${esc(t.name)}</p>
@@ -1272,6 +1305,15 @@ function buildQuestions(track, level){
     }
     return items.map(it => { const q = buildSelectAll(it); return { type:'selectAll', item:it, options:q.options, correct:q.correct }; });
   }
+  if(track.type === 'beers'){
+    // One select-all question: every beer/seltzer we serve, mixed with decoys we don't.
+    const served = S.menu.filter(it => it.section === 'Beers & Seltzers').map(it => it.item_name);
+    if(!served.length) return [];
+    const options = served.concat(BEER_DECOYS).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+    return [{ type:'selectAll', beerQuiz:true,
+      item:{ item_name:'Beers & Seltzers', section:'Service Skills', photo_url:'', sell_description:'' },
+      options, correct: new Set(served) }];
+  }
   if(track.type === 'allergen'){
     const items = sample(S.menu, Math.min(ALLERGEN_QUESTIONS, S.menu.length));
     return items.map(it => {
@@ -1338,7 +1380,9 @@ function renderSelectAll(q){
   const isAllergen = q.type === 'allergen';
   const prompt = isAllergen
     ? `Select ALL allergens present in the <span class="text-text">${esc(it.item_name)}</span>. If it has none, submit with nothing selected.`
-    : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>.`;
+    : (q.beerQuiz
+        ? `Select every beer and seltzer <span class="text-text">Bon Sake serves</span>. Leave the ones we don't carry alone.`
+        : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>.`);
   const cols = isAllergen ? 'grid-cols-2' : 'grid-cols-2';
   const opts = q.options.map((o,i) =>
     `<button data-opt="${i}" onclick="saToggle(this)" class="saOpt text-left bg-chip border border-line rounded-lg px-3 py-2.5 text-sm text-text transition-colors">${esc(o)}</button>`
@@ -1390,7 +1434,7 @@ function submitSelectAll(){
     }
   });
   gradeAndReveal(allRight, q.item);
-  $('saSubmit').classList.add('hidden'); $('saNext').classList.remove('hidden');
+  $('saSubmit').classList.add('hidden'); readyNext('saNext');
 }
 // Applies the green ("belongs") or red ("does not belong") glow to an option.
 function saGlow(btn, color){
@@ -1468,7 +1512,7 @@ function submitWordBank(){
     if(missing.length) $('wbResult').innerHTML = `<p class="text-sm text-fail">Missing: ${esc(missing.join(', '))}</p>`;
   }
   gradeAndReveal(allRight, q.item, 'wbResult');
-  $('wbSubmit').classList.add('hidden'); $('wbNext').classList.remove('hidden');
+  $('wbSubmit').classList.add('hidden'); readyNext('wbNext');
 }
 
 /* ---- Free recall (dish Level 2) — type every ingredient from memory ------ */
@@ -1481,7 +1525,7 @@ function renderRecall(q){
     ${photo}
     <p class="text-xs uppercase tracking-wider text-golddim">${esc(it.section)}</p>
     <h3 class="font-display text-2xl text-text mt-1 mb-1">${esc(it.item_name)}</h3>
-    <p class="text-sm text-muted mb-3">From memory, name all ${n} ingredients — no word bank this time. Type one, press Enter. Close spellings count. Tap a filled slot to remove it.</p>
+    <p class="text-sm text-muted mb-3">From memory, name all ${n} ingredients. No word bank this time. Type one, press Enter. Close spellings count. Tap a filled slot to remove it.</p>
     <div class="grid grid-cols-2 gap-2 mb-3">${slots}</div>
     <input id="rcInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
       onkeydown="if(event.key==='Enter'){event.preventDefault();rcAdd();}"
@@ -1540,7 +1584,7 @@ function submitRecall(){
     $('rcResult').innerHTML = `<p class="text-sm text-fail">Missing: ${esc(remaining.join(', '))}</p>`;
   }
   gradeAndReveal(allRight, q.item, 'rcResult');
-  $('rcSubmit').classList.add('hidden'); $('rcNext').classList.remove('hidden');
+  $('rcSubmit').classList.add('hidden'); readyNext('rcNext');
 }
 
 /* ---- Multiple choice (know / description / upsell) ----------------------- */
@@ -1570,7 +1614,7 @@ function answerMCQ(i){
     btn.classList.add('pointer-events-none');
   });
   const right = (i === q.correctIndex);
-  let html = right ? `<p class="text-pass font-semibold">Correct.</p>` : `<p class="text-fail font-semibold">Not quite — the right answer is highlighted green.</p>`;
+  let html = right ? `<p class="text-pass font-semibold">Correct.</p>` : `<p class="text-fail font-semibold">Not quite. The right answer is highlighted green.</p>`;
   if(q.explanation) html += `<p class="text-sm text-muted mt-2 leading-relaxed">${esc(q.explanation)}</p>`;
   if(q.fact) html += `<div class="border-l-2 border-gold pl-3 mt-3">
       <p class="text-xs uppercase tracking-wider text-golddim mb-1">Did you know?</p>
@@ -1578,7 +1622,7 @@ function answerMCQ(i){
     </div>`;
   $('mcqResult').innerHTML = html;
   recordOutcome(right, q.item);
-  $('mcqNext').classList.remove('hidden');
+  readyNext('mcqNext');
 }
 
 /* ---- Shared grading + reveal (for select-all / word bank) ---------------- */
@@ -1589,7 +1633,7 @@ function gradeAndReveal(allRight, item, resultElId){
   const sell = item && item.sell_description
     ? `<div class="border-l-2 border-gold pl-3 mt-3"><p class="text-xs uppercase tracking-wider text-golddim mb-1">Here's how to sell it</p><p class="font-display italic text-text text-sm leading-relaxed">${esc(item.sell_description)}</p></div>`
     : '';
-  const head = allRight ? `<p class="text-pass font-semibold">Correct!</p>` : `<p class="text-fail font-semibold">Not quite — review the highlights.</p>`;
+  const head = allRight ? `<p class="text-pass font-semibold">Correct!</p>` : `<p class="text-fail font-semibold">Not quite. Review the highlights.</p>`;
   el.innerHTML = (el.innerHTML || '') + head + sell;
 }
 
@@ -1600,6 +1644,14 @@ function recordOutcome(right, item){
 }
 
 function nextQuestion(){ S.test.idx++; renderQuestion(); }
+
+// Reveals the post-answer button. On the final question it leads to the score
+// screen, so it says so instead of promising a question that doesn't exist.
+function readyNext(btnId){
+  const btn = $(btnId); if(!btn) return;
+  if(S.test.idx >= S.test.questions.length - 1) btn.innerHTML = 'See My Score →';
+  btn.classList.remove('hidden');
+}
 
 /* ===========================================================================
    FINISH TEST + SCORE SCREEN
@@ -1656,7 +1708,7 @@ async function finishTest(){
   const isTiered = (t.track.type==='roll' || t.track.type==='dish');
   const levelUp = (isTiered && t.level===1 && passed) ? `<p class="text-pass text-sm mt-2">Level 2 is now unlocked.</p>` : '';
   const l2done  = (t.track.type==='dish' && t.level===2 && passed)
-    ? `<p class="text-pass text-sm mt-2">You've mastered the ${esc(t.section)} — it's on your scoreboard now.</p>`
+    ? `<p class="text-pass text-sm mt-2">You've mastered the ${esc(t.section)}. It's on your scoreboard now.</p>`
     : ((t.track.type==='roll' && t.level===2 && passed) ? `<p class="text-pass text-sm mt-2">You've completed both levels for ${esc(t.section)}. Your manager can see your results.</p>` : '');
 
   const msg = passed
@@ -1699,9 +1751,9 @@ async function answerTried(itemId, yes){
   const wrap = $('triedWrap');
   if(wrap){
     wrap.innerHTML = yes
-      ? `<p class="text-xs uppercase tracking-wider text-golddim mb-2">Nice — now put it in your words</p>
+      ? `<p class="text-xs uppercase tracking-wider text-golddim mb-2">Nice. Now put it in your words</p>
          <div id="dishNotesWrap">${renderDishNotes(itemId)}</div>`
-      : `<p class="text-pass text-sm">Flagged. The chef can see you're waiting to try this one — it may show up at pre-shift.</p>`;
+      : `<p class="text-pass text-sm">Flagged. The chef can see you're waiting to try this one; it may show up at pre-shift.</p>`;
   }
   try {
     await apiPost({ action:'saveDishNote', first:S.user.first_name, last:S.user.last_name,
@@ -1739,7 +1791,7 @@ function renderProgress(){
   const bySec = {};
   res.forEach(r => { const k=r.test_section; (bySec[k]=bySec[k]||[]).push(Number(r.score_percent||0)); });
   const secAvgs = Object.keys(bySec).map(k => ({ section:k, avg: Math.round(bySec[k].reduce((a,b)=>a+b,0)/bySec[k].length) }));
-  let strongest='—', needs='—';
+  let strongest='-', needs='-';
   if(secAvgs.length){
     const sorted = secAvgs.slice().sort((a,b)=>b.avg-a.avg);
     strongest = sorted[0].section; needs = sorted[sorted.length-1].section;
@@ -1808,7 +1860,7 @@ function renderProgress(){
       ${statCard('Dishes Mastered', masteredCount)}
       ${statCard('Learning', learningCount)}
       ${statCard('Tests Taken', taken)}
-      ${statCard('Overall Score', avg==null?'—':avg+'%')}
+      ${statCard('Overall Score', avg==null?'-':avg+'%')}
     </div>
 
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Mastery by Category</h3>
@@ -1873,7 +1925,7 @@ function drawTeam(d){
   const rows = staff.map((s,i) => {
     const name = (s.first_name+' '+s.last_name).trim();
     const a = agg[name] || { tests:0, sum:0, mastered:new Set() };
-    const avg = a.tests ? Math.round(a.sum/a.tests)+'%' : '—';
+    const avg = a.tests ? Math.round(a.sum/a.tests)+'%' : '-';
     const mastered = a.mastered ? a.mastered.size : 0;
     const editing = (i === teamEditIdx);
     const roleCell = editing
@@ -1912,11 +1964,11 @@ function drawTeam(d){
       <span class="text-xs text-gold border border-golddim rounded px-2 py-0.5 flex-shrink-0">${w.names.length} waiting</span>
     </div>`).join('') || `<p class="text-muted text-sm">No one is waiting to taste a dish right now.</p>`;
   const tastedRows = tasted.map(w => `<div class="py-1.5 border-b border-line last:border-0">
-      <p class="text-sm text-text">${esc(dishName(w.id))} <span class="text-xs text-muted">— tasted by ${esc(w.names.join(', '))}</span></p>
+      <p class="text-sm text-text">${esc(dishName(w.id))} <span class="text-xs text-muted">· tasted by ${esc(w.names.join(', '))}</span></p>
     </div>`).join('') || `<p class="text-muted text-sm">No tastings recorded yet.</p>`;
   const tastingHtml = `
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Pre-Shift Tasting List</h3>
-    <p class="text-xs text-muted mb-2">Team members who mastered a dish but haven't tasted it yet — good candidates for the chef's pre-shift lineup.</p>
+    <p class="text-xs text-muted mb-2">Team members who mastered a dish but haven't tasted it yet: good candidates for the chef's pre-shift lineup.</p>
     <div class="bg-surface border border-line rounded-xl p-4 mb-6">${waitRows}</div>
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Tasted</h3>
     <div class="bg-surface border border-line rounded-xl p-4 mb-6">${tastedRows}</div>`;
@@ -2050,7 +2102,7 @@ async function renderLeaderboard(){
             <td class="py-2 text-muted whitespace-nowrap">${fmtDate(row.last_active)}</td>
           </tr>`;
         }).join('')}</tbody>
-      </table>` : `<p class="text-muted text-sm">No dishes mastered yet. Be the first — pass both levels on any dish.</p>`;
+      </table>` : `<p class="text-muted text-sm">No dishes mastered yet. Be the first: pass both levels on any dish.</p>`;
     $('lbBody').innerHTML = html;
   } catch(err){
     $('lbBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the leaderboard. Check your connection.</p>`;

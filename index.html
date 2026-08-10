@@ -127,6 +127,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
+    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v5</p>
   </div>
 </section>
 
@@ -199,6 +200,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
+const APP_VERSION = 5;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -218,6 +220,8 @@ const S = {
   testActive: false,     // true while a test is running (locks nav)
   study: { section: null, itemId: null, showDetailMobile: false },   // null section = category picker
   testBrowse: { section: null },   // selected category in the dish-by-dish Test tab
+  config: {},            // key/value settings from the Config sheet (expiry months, thresholds)
+  gates: [],             // serving-gate groups from the Gate Requirements sheet
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
 };
@@ -418,6 +422,12 @@ window.addEventListener('DOMContentLoaded', () => {
   $('modalLogo').innerHTML  = logoImg('w-20 h-20');
   $('loginForm').addEventListener('submit', handleLogin);
   $('antiCheatStart').addEventListener('click', beginTestAfterModal);
+  // Version stamp for support: "app vX · server vY" on the login screen.
+  // The ping also warms up the backend so the first real request is faster.
+  apiGet('ping').then(r => {
+    const el = $('verLine');
+    if(el && r && r.version) el.textContent = 'app v' + APP_VERSION + ' · server v' + r.version;
+  }).catch(()=>{});
   restoreSession();   // if a refresh wiped memory, silently log the user back in
 });
 
@@ -458,6 +468,8 @@ async function doLogin(first, last, pin){
     const m = await apiGet('getMenu');
     if(!m.ok) return { ok:false, error:'Could not load the menu. Check your connection and try again.' };
     S.menu = (m.food || []).concat(m.drinks || []);   // drinks are menu items too
+    S.config = m.config || {};
+    S.gates  = m.gates  || [];
     S.drinksAvailable = !!m.drinksAvailable;
     S.pairingsAvailable = !!m.pairingsAvailable;
     canonicalizeMenu();        // collapse plural-duplicate ingredients before anything reads them
@@ -1095,23 +1107,67 @@ function level2Unlocked(section){
   return S.results.some(r => r.test_section === section && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && Number(r.score_percent)>=80);
 }
 
+/* ---- Expiry clock (config-driven "ongoing education") --------------------
+   Each test type gets a shelf life in months from the Config sheet.
+   0 or blank = never expires, so nothing changes until a value is set.
+   An expired pass stops counting everywhere: mastery, gates, leaderboard. */
+function cfgNum(key, dflt){ const v = Number(S.config[key]); return isNaN(v) ? dflt : v; }
+function expiryMonthsFor(testType){ return Number(S.config['expiry_months_' + (testType || 'dish')]) || 0; }
+function resultExpiryDate(r){
+  const m = expiryMonthsFor(r.test_type);
+  if(!m) return null;
+  const d = new Date(r.date_taken); if(isNaN(d)) return null;
+  d.setMonth(d.getMonth() + m);
+  return d;
+}
+function resultValid(r){ const e = resultExpiryDate(r); return !e || e > new Date(); }
+
 /* ---- Per-dish mastery (drives the dish-by-dish Test tab + leaderboard) ---- */
 function dishResults(itemId){
   return S.results.filter(r => String(r.test_type||'')==='dish' && String(r.item_id||'')===String(itemId));
 }
 function dishLevelPassed(itemId, level){
-  return dishResults(itemId).some(r => Number(r.test_level)===level && String(r.pass_fail).toUpperCase()==='PASS');
+  return dishResults(itemId).some(r => Number(r.test_level)===level && String(r.pass_fail).toUpperCase()==='PASS' && resultValid(r));
 }
 function dishMastered(itemId){ return dishLevelPassed(itemId, 2); }
+// Once-mastered but the pass has expired: time to retake both levels.
+function dishMasteryLapsed(itemId){
+  return !dishMastered(itemId) && dishResults(itemId).some(r => Number(r.test_level)===2 && String(r.pass_fail).toUpperCase()==='PASS');
+}
 function masteredDishIds(){
   const s = new Set();
-  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===2 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id) s.add(String(r.item_id)); });
+  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===2 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id && resultValid(r)) s.add(String(r.item_id)); });
   return s;
 }
 function learningDishIds(){
   const mastered = masteredDishIds(); const s = new Set();
-  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id && !mastered.has(String(r.item_id))) s.add(String(r.item_id)); });
+  S.results.forEach(r => { if(String(r.test_type||'')==='dish' && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && r.item_id && resultValid(r) && !mastered.has(String(r.item_id))) s.add(String(r.item_id)); });
   return s;
+}
+
+/* ---- Path to Serving (gate groups from the Gate Requirements sheet) ------ */
+function gateProgress(){
+  const mastered = masteredDishIds();
+  const groups = (S.gates || []).filter(g => g.active && g.required > 0).map(g => {
+    const raw = S.menu.filter(it => g.categories.indexOf(it.section) !== -1 && mastered.has(String(it.item_id))).length;
+    return { group: g.group, required: g.required, count: Math.min(raw, g.required), done: raw >= g.required };
+  });
+  return { groups, allDone: groups.length > 0 && groups.every(g => g.done) };
+}
+
+/* ---- Senior Server track (thresholds from Config; 0 = not set yet) ------- */
+const DRINK_SECTIONS = ['Signature Cocktails','Mocktails','Beers & Seltzers','Red Wines','White Wines'];
+function seniorProgress(){
+  const foodMin  = Number(S.config.senior_food_min)  || 0;
+  const drinkMin = Number(S.config.senior_drink_min) || 0;
+  if(!foodMin && !drinkMin) return null;
+  const mastered = masteredDishIds();
+  let food = 0, drink = 0;
+  S.menu.forEach(it => {
+    if(!mastered.has(String(it.item_id))) return;
+    if(DRINK_SECTIONS.indexOf(it.section) !== -1) drink++; else food++;
+  });
+  return { food, foodMin, drink, drinkMin, done: food >= foodMin && drink >= drinkMin };
 }
 // Dishes with 2+ ingredients in a category (the ones eligible to test on).
 function testableDishes(section){
@@ -1176,10 +1232,12 @@ function selectTestCat(i){ S.testBrowse.section = testCats[i] || null; renderTes
 function dishTestRow(it){
   const l1 = dishLevelPassed(it.item_id, 1);
   const mastered = dishMastered(it.item_id);
+  const lapsed = dishMasteryLapsed(it.item_id);
   const status = mastered
     ? `<span class="text-xs text-pass border border-pass/50 rounded px-2 py-0.5">✓ Mastered</span>`
+    : (lapsed ? `<span class="text-xs text-gold border border-gold rounded px-2 py-0.5">Refresh due</span>`
     : (l1 ? `<span class="text-xs text-gold border border-golddim rounded px-2 py-0.5">Level 1 passed</span>`
-          : `<span class="text-xs text-muted border border-line rounded px-2 py-0.5">Not started</span>`);
+          : `<span class="text-xs text-muted border border-line rounded px-2 py-0.5">Not started</span>`));
   const l1btn = `<button onclick="startDishTest('${it.item_id}',1)" class="text-xs font-semibold px-3 py-1.5 rounded-lg ${l1?'border border-line text-muted':'bg-gold text-bg'}">Level 1${l1?' ✓':''}</button>`;
   const l2btn = `<button onclick="${l1?`startDishTest('${it.item_id}',2)`:`lockedMsg2()`}" class="text-xs font-semibold px-3 py-1.5 rounded-lg border ${mastered?'border-pass text-pass':(l1?'border-gold text-gold':'border-line text-muted')}">${l1?('Level 2'+(mastered?' ✓':'')):'🔒 Level 2'}</button>`;
   return `<div class="flex items-center justify-between gap-2 bg-surface border border-line rounded-lg px-3 py-2.5">
@@ -1663,6 +1721,10 @@ async function finishTest(){
   const passed = pct >= t.pass;
   const duration = Math.round((Date.now() - t.started)/1000);
 
+  // Snapshot the serving-gate state BEFORE this result lands, so we can
+  // celebrate any milestone this pass just completed.
+  const gpBefore = (t.track.type==='dish' && t.level===2 && passed) ? gateProgress() : null;
+
   // Save result
   showLoader('Saving your score…');
   let saveWarning = '';
@@ -1715,6 +1777,25 @@ async function finishTest(){
     ? `<p class="font-display text-3xl text-pass">You passed.</p>${levelUp}${l2done}`
     : `<p class="font-display text-3xl text-fail">You didn't pass this time.</p><p class="text-muted text-sm mt-2">You need ${t.pass}% to pass. Review the items you missed and try again.</p>`;
 
+  // Milestone celebrations: completing a gate group, or completing them all.
+  let milestone = '';
+  if(gpBefore){
+    const gpAfter = gateProgress();
+    const newly = gpAfter.groups.filter(g => g.done && !(gpBefore.groups.find(x => x.group === g.group) || {}).done);
+    if(gpAfter.allDone && !gpBefore.allDone){
+      milestone = `<div class="mt-5 bg-surface border-2 border-pass rounded-xl p-5 text-center">
+        <p class="font-display text-2xl text-pass">You did it! 🎉</p>
+        <p class="text-text text-sm mt-2 leading-relaxed">Every serving requirement is complete. Tell your manager. This is a big deal, and you earned it.</p>
+      </div>`;
+    } else if(newly.length){
+      const g = newly[0];
+      milestone = `<div class="mt-5 bg-surface border border-gold rounded-xl p-4 text-center">
+        <p class="font-display text-xl text-gold">Milestone reached! 🎉</p>
+        <p class="text-text text-sm mt-1">${esc(g.group)}: ${g.count} of ${g.required} complete. One step closer to serving.</p>
+      </div>`;
+    }
+  }
+
   // After mastering a dish, ask whether they've actually tasted it. "Yes" opens
   // their tasting notes to describe it; "Not yet" flags it for the pre-shift list.
   const askTried = (t.track.type==='dish' && t.level===2 && passed && (S.dishNotes[t.itemId]||{}).tried !== 'yes');
@@ -1737,6 +1818,7 @@ async function finishTest(){
         <p class="text-muted text-sm mt-1">${t.correct} out of ${total} correct</p>
       </div>
       ${msg}
+      ${milestone}
       ${triedAsk}
       ${missedHtml}
       <button onclick="returnToMenu()" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">View My Progress →</button>
@@ -1818,6 +1900,52 @@ function renderProgress(){
     </div>`;
   }).join('') : `<p class="text-muted text-sm">No dishes to master yet.</p>`;
 
+  // ---- Path to Serving: the gate checklist ----
+  const gp = gateProgress();
+  const gateHtml = gp.groups.length ? `
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Path to Serving</h3>
+    <div class="bg-surface border ${gp.allDone?'border-pass':'border-line'} rounded-xl p-4 mb-6">
+      ${gp.allDone ? `<p class="text-pass font-semibold mb-2">All requirements met. See your manager.</p>` : `<p class="text-xs text-muted mb-2">Master these to be eligible to serve. Your manager makes the call.</p>`}
+      ${gp.groups.map(g => `<div class="flex items-center gap-3 py-1.5">
+        <span class="text-sm ${g.done?'text-pass':'text-text'} w-40 flex-shrink-0 truncate">${g.done?'✓ ':''}${esc(g.group)}</span>
+        <div class="flex-1 h-2 bg-line rounded-full overflow-hidden"><div class="h-full ${g.done?'bg-pass':'bg-gold'}" style="width:${g.required?Math.round(100*g.count/g.required):0}%"></div></div>
+        <span class="text-sm text-muted w-10 text-right">${g.count}/${g.required}</span>
+      </div>`).join('')}
+    </div>` : '';
+
+  // ---- Senior Server track (hidden until thresholds are set in Config) ----
+  const sp = seniorProgress();
+  const seniorHtml = sp ? `
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Senior Server Track</h3>
+    <div class="bg-surface border ${sp.done?'border-pass':'border-line'} rounded-xl p-4 mb-6">
+      ${sp.done ? `<p class="text-pass font-semibold mb-2">Senior Server requirements met. See your manager.</p>` : ''}
+      ${sp.foodMin ? `<p class="text-sm text-text py-1">Food dishes: <span class="${sp.food>=sp.foodMin?'text-pass':'text-gold'}">${sp.food}</span> of ${sp.foodMin}</p>` : ''}
+      ${sp.drinkMin ? `<p class="text-sm text-text py-1">Drinks: <span class="${sp.drink>=sp.drinkMin?'text-pass':'text-gold'}">${sp.drink}</span> of ${sp.drinkMin}</p>` : ''}
+    </div>` : '';
+
+  // ---- Ongoing education: masteries expiring soon or already lapsed ----
+  const warnDays = cfgNum('expiring_soon_days', 30);
+  const refreshRows = [];
+  masteredDishIds().forEach(id => {
+    const valid = dishResults(id).filter(r => Number(r.test_level)===2 && String(r.pass_fail).toUpperCase()==='PASS' && resultValid(r))
+      .sort((a,b)=>new Date(b.date_taken)-new Date(a.date_taken))[0];
+    const e = valid && resultExpiryDate(valid);
+    if(e && (e.getTime() - Date.now()) < warnDays*86400000){
+      const it = S.menu.find(x=>String(x.item_id)===String(id));
+      refreshRows.push({ name: it?it.item_name:id, label: 'Refresh by ' + fmtDate(e.toISOString()), cls: 'text-gold' });
+    }
+  });
+  S.menu.forEach(it => {
+    if(dishMasteryLapsed(it.item_id)) refreshRows.push({ name: it.item_name, label: 'Expired. Retake both levels.', cls: 'text-fail' });
+  });
+  const refreshHtml = refreshRows.length ? `
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Ongoing Education</h3>
+    <p class="text-xs text-muted mb-2">Getting to the top is one thing; staying on top is another. Refresh these to keep your count.</p>
+    <div class="space-y-1.5 mb-6">${refreshRows.map(r => `
+      <div class="flex items-center justify-between bg-surface border border-line rounded-lg px-3 py-2">
+        <span class="text-sm text-text">${esc(r.name)}</span><span class="text-xs ${r.cls}">${esc(r.label)}</span>
+      </div>`).join('')}</div>` : '';
+
   const bars = secAvgs.length ? secAvgs.sort((a,b)=>b.avg-a.avg).map(s => {
     const color = s.avg>=80 ? 'bg-pass' : (s.avg<70 ? 'bg-fail' : 'bg-gold');
     return `<div class="flex items-center gap-3 py-1.5">
@@ -1862,6 +1990,10 @@ function renderProgress(){
       ${statCard('Tests Taken', taken)}
       ${statCard('Overall Score', avg==null?'-':avg+'%')}
     </div>
+
+    ${gateHtml}
+    ${seniorHtml}
+    ${refreshHtml}
 
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Mastery by Category</h3>
     <div class="bg-surface border border-line rounded-xl p-4 mb-6">${catBars}</div>

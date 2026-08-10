@@ -58,6 +58,9 @@
   .flip-face { position:absolute; inset:0; backface-visibility:hidden; -webkit-backface-visibility:hidden; display:flex; align-items:center; justify-content:center; border-radius:1rem; }
   .flip-back { transform: rotateY(180deg); }
 
+  /* Selected table in the placement test */
+  .tp-sel { box-shadow: 0 0 0 3px rgba(201,168,76,0.9); border-color: #C9A84C !important; }
+
   /* Highlighted table in the Table Number Test */
   .tbl-pulse { animation: tblPulse 1.2s ease-in-out infinite; }
   @keyframes tblPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(201,168,76,0.7); } 50% { box-shadow: 0 0 0 9px rgba(201,168,76,0); } }
@@ -131,7 +134,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v7</p>
+    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v8</p>
   </div>
 </section>
 
@@ -210,7 +213,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 7;           // shown on the login screen; bump with each release
+const APP_VERSION = 8;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -1318,6 +1321,8 @@ function floorRooms(){
   return order;
 }
 function roomTables(room){ return (S.layout || []).filter(t => t.room === room); }
+// Only kind=table rows are testable; doors, stations, the bar, etc. are scenery.
+function roomTestables(room){ return roomTables(room).filter(t => (t.kind || 'table') === 'table'); }
 function roomSection(room){ return 'Tables: ' + room; }
 
 // A room passed = a valid (non-expired) PASS on that room's Table Number Test.
@@ -1331,15 +1336,39 @@ function runFoodProgress(){
   return { rooms, passed, allDone: rooms.length > 0 && passed.length === rooms.length };
 }
 
-// One room drawn from the layout data. opts: { hideNumbers, highlight }
+// One room drawn from the layout data.
+// opts: { hideNumbers } hides table numbers (markers stay visible),
+//       { interactive } makes tables tappable buttons for the placement test.
+function markerTile(t){
+  const pos = `left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;`;
+  const label = esc(t.table);
+  if(t.kind === 'bar'){
+    const vert = t.h > t.w ? 'writing-mode:vertical-rl;' : '';
+    return `<div class="absolute flex items-center justify-center border-2 border-pass/60 rounded-lg text-pass text-[10px] font-semibold tracking-widest" style="${pos}${vert}">${label}</div>`;
+  }
+  if(t.kind === 'door')
+    return `<div class="absolute flex items-center justify-center border border-gold/70 bg-gold/10 rounded-md text-gold text-[9px] sm:text-[10px] font-semibold px-1 text-center leading-tight" style="${pos}">⇄ ${label}</div>`;
+  if(t.kind === 'host' || t.kind === 'station')
+    return `<div class="absolute flex items-center justify-center border border-gold bg-gold/15 rounded-md text-gold text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide px-1 text-center leading-tight" style="${pos}">${label}</div>`;
+  if(t.kind === 'stairs')
+    return `<div class="absolute flex items-center justify-center border border-line rounded-md text-muted text-[9px] sm:text-[10px] font-medium uppercase px-1" style="${pos}">${label}</div>`;
+  // note: plain orientation text, no box
+  return `<div class="absolute flex items-center text-muted text-[9px] sm:text-[10px] italic" style="${pos}">${label}</div>`;
+}
 function renderRoomMap(room, opts){
   opts = opts || {};
   const tiles = roomTables(room).map(t => {
-    const hl = opts.highlight != null && String(t.table) === String(opts.highlight);
+    if((t.kind || 'table') !== 'table') return markerTile(t);
     const shape = t.shape === 'round' ? 'rounded-full' : 'rounded-md';
+    const pos = `left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;`;
+    if(opts.interactive){
+      return `<button data-tid="${esc(t.table)}" onclick="tpPickTable(this)"
+        class="tpTable absolute flex items-center justify-center text-xs sm:text-sm font-semibold border border-line bg-chip text-gold ${shape}"
+        style="${pos}"></button>`;
+    }
     const label = opts.hideNumbers ? '' : esc(t.table);
-    return `<div class="absolute flex items-center justify-center text-xs sm:text-sm font-semibold border ${hl?'border-gold bg-gold/25 text-gold tbl-pulse':'border-line bg-chip text-text'} ${shape}"
-      style="left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;">${label}</div>`;
+    return `<div class="absolute flex items-center justify-center text-xs sm:text-sm font-semibold border border-line bg-chip text-text ${shape}"
+      style="${pos}">${label}</div>`;
   }).join('');
   return `<div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="aspect-ratio:4/5;max-width:520px;margin:0 auto;">${tiles}</div>`;
 }
@@ -1354,10 +1383,10 @@ function renderFloor(){
   const room = (rooms.indexOf(S.floorBrowse.room) !== -1) ? S.floorBrowse.room : null;
   if(!room){
     const cards = rooms.map((r,i) => {
-      const n = roomTables(r).length, passed = roomTestPassed(r);
+      const n = roomTestables(r).length, passed = roomTestPassed(r);
       return `<button onclick="selectFloorRoom(${i})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
         <p class="text-text font-medium text-base leading-snug">${esc(r)}</p>
-        <p class="text-xs mt-1.5 ${passed?'text-pass':'text-muted'}">${n} positions${passed?' · Passed ✓':''}</p>
+        <p class="text-xs mt-1.5 ${passed?'text-pass':'text-muted'}">${n} tables${passed?' · Passed ✓':''}</p>
       </button>`;
     }).join('');
     pane.innerHTML = `
@@ -1376,39 +1405,79 @@ function renderFloor(){
 function selectFloorRoom(i){ S.floorBrowse.room = floorRooms()[i] || null; renderFloor(); }
 
 function startTableTest(room){
-  if(!roomTables(room).length) return;
+  if(!roomTestables(room).length) return;
   pendingTest = { tableRoom: room };
   show($('antiCheatModal'));
 }
 
-/* ---- Table question: map with one highlighted table, type the number ----- */
-function renderTableQ(q){
+/* ---- Table placement test: blank map + number bank ------------------------
+   Tap a table, then tap its number; the number lands on the table. Tap a
+   filled table to send its number back. Submit when the bank is empty.
+   Right answers glow green, wrong glow red. Correct numbers are NOT revealed:
+   the trainee studies the Floor tab and retakes. */
+let _tpSel = null;
+function renderTablePlace(q){
+  const bank = shuffle(roomTestables(q.room).map(t => t.table));
+  const chips = bank.map(n => `<button data-num="${esc(n)}" onclick="tpPickNum(this)"
+    class="tpChip bg-chip border border-line rounded-full px-3.5 py-1.5 text-sm font-semibold text-text">${esc(n)}</button>`).join('');
   return `
     <p class="text-xs uppercase tracking-wider text-golddim">${esc(q.room)}</p>
-    <h3 class="font-display text-2xl text-text mt-1 mb-3">Which table is highlighted?</h3>
-    ${renderRoomMap(q.room, { hideNumbers:true, highlight:q.target.table })}
-    <input id="tqInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
-      onkeydown="if(event.key==='Enter'){event.preventDefault();submitTableQ();}"
-      placeholder="Type the table number"
-      class="mt-4 w-full bg-bg border border-line rounded-lg px-3 py-3 text-center text-lg tracking-widest text-text outline-none focus:border-gold"/>
-    <div id="tqResult" class="mt-3"></div>
-    <button id="tqSubmit" onclick="submitTableQ()" class="mt-3 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Submit Answer</button>
-    <button id="tqNext" onclick="nextQuestion()" class="hidden mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next Question →</button>`;
+    <h3 class="font-display text-2xl text-text mt-1 mb-2">Put every number on its table</h3>
+    <p class="text-sm text-muted mb-3">Tap a table, then tap its number. Tap a filled table to take the number back.</p>
+    ${renderRoomMap(q.room, { interactive:true })}
+    <p id="tpHint" class="text-xs text-muted text-center mt-2"></p>
+    <div id="tpBank" class="flex flex-wrap gap-2 justify-center mt-3">${chips}</div>
+    <div id="tpResult" class="mt-3"></div>
+    <button id="tpSubmit" onclick="submitTablePlace()" class="mt-3 w-full bg-gold text-bg font-semibold py-3 rounded-lg opacity-40 pointer-events-none">Submit Test</button>
+    <button id="tpNext" onclick="nextQuestion()" class="hidden mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next Question →</button>`;
 }
-function normTable(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'').replace(/^0+(?=\d)/,''); }
-function submitTableQ(){
-  const t = S.test; if(t.answered) return;
+function tpPickTable(el){
+  if(S.test.answered) return;
+  if(el.dataset.assigned){
+    // send the number back to the bank
+    const chip = document.querySelector(`.tpChip[data-num="${cssEscape(el.dataset.assigned)}"]`);
+    if(chip) chip.classList.remove('hidden');
+    el.removeAttribute('data-assigned'); el.textContent = '';
+    _tpSel = null;
+    document.querySelectorAll('.tpTable').forEach(t => t.classList.remove('tp-sel'));
+    tpCheckFull();
+    return;
+  }
+  document.querySelectorAll('.tpTable').forEach(t => t.classList.remove('tp-sel'));
+  el.classList.add('tp-sel');
+  _tpSel = el;
+  const h = $('tpHint'); if(h) h.textContent = 'Now tap its number below.';
+}
+function tpPickNum(chip){
+  if(S.test.answered) return;
+  if(!_tpSel){ const h = $('tpHint'); if(h) h.textContent = 'Tap a table first, then its number.'; return; }
+  _tpSel.dataset.assigned = chip.dataset.num;
+  _tpSel.textContent = chip.dataset.num;
+  _tpSel.classList.remove('tp-sel');
+  chip.classList.add('hidden');
+  _tpSel = null;
+  const h = $('tpHint'); if(h) h.textContent = '';
+  tpCheckFull();
+}
+function tpCheckFull(){
+  const all = Array.from(document.querySelectorAll('.tpTable')).every(t => t.dataset.assigned);
+  const sub = $('tpSubmit'); if(!sub) return;
+  sub.classList.toggle('opacity-40', !all); sub.classList.toggle('pointer-events-none', !all);
+}
+function submitTablePlace(){
+  const t = S.test; if(t.answered) return; t.answered = true;
   const q = t.questions[t.idx];
-  const inp = $('tqInput'); const val = (inp.value||'').trim();
-  if(!val) return;
-  t.answered = true;
-  const right = normTable(val) === normTable(q.target.table);
-  recordOutcome(right, { item_name: 'Table ' + q.target.table, section: q.room });
-  $('tqResult').innerHTML = right
-    ? `<p class="text-pass font-semibold text-center">Correct. That's table ${esc(q.target.table)}.</p>`
-    : `<p class="text-fail font-semibold text-center">Not quite. That's table ${esc(q.target.table)}.</p>`;
-  inp.disabled = true;
-  $('tqSubmit').classList.add('hidden'); readyNext('tqNext');
+  let allRight = true;
+  document.querySelectorAll('.tpTable').forEach(el => {
+    const ok = String(el.dataset.assigned || '') === String(el.dataset.tid);
+    if(ok){ el.style.borderColor = '#27AE60'; el.style.background = 'rgba(39,174,96,0.2)'; el.style.boxShadow = '0 0 8px rgba(39,174,96,0.55)'; }
+    else  { el.style.borderColor = '#C0392B'; el.style.background = 'rgba(192,57,43,0.2)'; el.style.boxShadow = '0 0 8px rgba(192,57,43,0.55)'; allRight = false; }
+  });
+  recordOutcome(allRight, { item_name: q.room + ' table numbers', section: 'Floor' });
+  $('tpResult').innerHTML = allRight
+    ? `<p class="text-pass font-semibold text-center">Perfect. Every table right.</p>`
+    : `<p class="text-fail font-semibold text-center">Not quite. Study this room on the Floor tab, then retake. The red ones are yours to figure out.</p>`;
+  $('tpSubmit').classList.add('hidden'); readyNext('tpNext');
 }
 
 /* ===========================================================================
@@ -1525,7 +1594,7 @@ function renderTestHome(){
       const passed = roomTestPassed(r);
       return `<div class="bg-surface border border-line rounded-xl p-4">
         <p class="text-text font-medium leading-tight">${esc(r)}</p>
-        <p class="text-xs mt-1 ${passed?'text-pass':'text-muted'}">${passed?'Passed ✓':(roomTables(r).length + ' positions')}</p>
+        <p class="text-xs mt-1 ${passed?'text-pass':'text-muted'}">${passed?'Passed ✓':(roomTestables(r).length + ' tables')}</p>
         <button onclick="startTableTest('${esc(r).replace(/'/g,"\\'")}')"
           class="mt-3 w-full ${passed?'border border-gold text-gold':'bg-gold text-bg'} text-sm font-semibold py-2 rounded-lg">${passed?'Retake':'Start Test'}</button>
       </div>`;
@@ -1626,14 +1695,16 @@ function startDishTest(itemId, level){
 function beginTestAfterModal(){
   hide($('antiCheatModal'));
 
-  // Table Number Test: one question per table in the room, random order, 100%.
+  // Table Number Test: one placement round covering every table in the room.
   if(pendingTest.tableRoom){
     const room = pendingTest.tableRoom;
-    const questions = shuffle(roomTables(room)).map(tb => ({ type:'tablemap', room, target:tb }));
+    // The test may be launched from the Floor tab; the test screen lives in
+    // the Test pane, so bring that pane forward BEFORE locking navigation.
+    if(S.activeTab !== 'test') switchTab('test');
     S.test = {
       track: { type:'tables' }, level: 1,
       section: roomSection(room), itemId: room, testType: 'tables',
-      pass: 100, questions, idx: 0, correct: 0, wrong: 0,
+      pass: 100, questions: [{ type:'tableplace', room }], idx: 0, correct: 0, wrong: 0,
       missed: [], started: Date.now(), answered: false
     };
     S.testActive = true; applyNavLockStyles(); setAbandonFlag(); renderQuestion();
@@ -1770,13 +1841,12 @@ function renderQuestion(){
   if(q.type === 'selectAll' || q.type === 'allergen') bodyHtml = renderSelectAll(q);
   else if(q.type === 'wordbank')                      bodyHtml = renderWordBank(q);
   else if(q.type === 'recall')                        bodyHtml = renderRecall(q);
-  else if(q.type === 'tablemap')                      bodyHtml = renderTableQ(q);
+  else if(q.type === 'tableplace')                    bodyHtml = renderTablePlace(q);
   else if(q.type === 'mcq')                           bodyHtml = renderMCQ(q);
 
   $('tab-test').innerHTML = `<div class="max-w-2xl mx-auto">${header}<div id="qBody" class="fade-in">${bodyHtml}</div></div>`;
   if(q.type === 'wordbank') wbAfterRender(q);
   if(q.type === 'recall'){ const ri = $('rcInput'); if(ri) ri.focus(); }
-  if(q.type === 'tablemap'){ const ti = $('tqInput'); if(ti) ti.focus(); }
 }
 
 /* ---- Select-all (roll Level 1 + allergen) -------------------------------- */

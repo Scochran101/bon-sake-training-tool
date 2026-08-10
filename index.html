@@ -131,7 +131,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v6</p>
+    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v7</p>
   </div>
 </section>
 
@@ -158,17 +158,19 @@
 
       <!-- Tab bar -->
       <nav class="flex gap-1">
-        <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📖 Study</button>
-        <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🗺️ Floor</button>
-        <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">✏️ Test</button>
-        <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📊 Progress</button>
-        <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted transition-colors">👥 Team</button>
+        <button data-tab="training" onclick="switchTab('training')" class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🎓 Training</button>
+        <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📖 Study</button>
+        <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🗺️ Floor</button>
+        <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">✏️ Test</button>
+        <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📊 Progress</button>
+        <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">👥 Team</button>
       </nav>
     </div>
   </header>
 
   <!-- Tab content -->
   <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5">
+    <div id="tab-training" class="hidden"></div>
     <div id="tab-study"    class="hidden"></div>
     <div id="tab-floor"    class="hidden"></div>
     <div id="tab-test"     class="hidden"></div>
@@ -208,7 +210,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 6;           // shown on the login screen; bump with each release
+const APP_VERSION = 7;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -232,6 +234,10 @@ const S = {
   gates: [],             // serving-gate groups from the Gate Requirements sheet
   layout: [],            // Floor Layout rows: { room, table, x, y, w, h, shape }
   floorBrowse: { room: null },   // selected room on the Floor tab
+  curriculum: [],        // Training Curriculum rows: { week, day, title, content, trainer_notes }
+  closeoutQs: [],        // end-of-day questions (editable in the sheet)
+  trainerQs: [],         // trainer sign-off questions (editable in the sheet)
+  training: { week: null, day: null },   // selected week/day on the Training tab
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
 };
@@ -481,6 +487,9 @@ async function doLogin(first, last, pin){
     S.config = m.config || {};
     S.gates  = m.gates  || [];
     S.layout = m.layout || [];
+    S.curriculum = m.curriculum || [];
+    S.closeoutQs = m.closeoutQuestions || [];
+    S.trainerQs  = m.trainerQuestions  || [];
     S.drinksAvailable = !!m.drinksAvailable;
     S.pairingsAvailable = !!m.pairingsAvailable;
     canonicalizeMenu();        // collapse plural-duplicate ingredients before anything reads them
@@ -578,6 +587,7 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   S.dishNotes = {}; S.testBrowse = { section:null }; S.floorBrowse = { room:null };
+  S.training = { week:null, day:null };
   clearTimeout(_idleTimer);
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
@@ -708,7 +718,7 @@ function switchTab(tab){
   if(S.testActive) return;                            // nav fully locked during a test
   S.activeTab = tab;
   if(S.user){ try { sessionStorage.setItem('bonsake_tab', tab); } catch(e){} }  // restore this tab on refresh
-  ['study','floor','test','progress','team'].forEach(t => {
+  ['training','study','floor','test','progress','team'].forEach(t => {
     const btn = document.querySelector(`.tabBtn[data-tab="${t}"]`);
     const pane = $('tab-' + t);
     if(!btn || !pane) return;
@@ -719,6 +729,7 @@ function switchTab(tab){
     pane.classList.toggle('hidden', !isActive);
   });
   applyNavLockStyles();
+  if(tab === 'training') renderTraining();
   if(tab === 'study')    renderStudy();
   if(tab === 'floor')    renderFloor();
   if(tab === 'test')     renderTestHome();
@@ -727,7 +738,7 @@ function switchTab(tab){
 }
 
 function applyNavLockStyles(){
-  ['study','floor','progress','team'].forEach(t => {
+  ['training','study','floor','progress','team'].forEach(t => {
     const btn = document.querySelector(`.tabBtn[data-tab="${t}"]`);
     if(!btn) return;
     if(S.testActive){ btn.classList.add('opacity-30','pointer-events-none'); }
@@ -1126,6 +1137,176 @@ function buildSelectAll(item){
   const decoys = sample(pool, need);
   const options = correct.concat(decoys).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   return { item, options, correct: new Set(correct) };
+}
+
+/* ===========================================================================
+   TRAINING TAB (curriculum by week/day, daily close-out, trainer sign-off)
+=========================================================================== */
+function curricWeeks(){
+  const w = [];
+  (S.curriculum || []).forEach(r => { if(w.indexOf(r.week) === -1) w.push(r.week); });
+  return w.sort((a,b) => a-b);
+}
+function weekDays(week){
+  const d = [];
+  (S.curriculum || []).forEach(r => { if(r.week === week && d.indexOf(r.day) === -1) d.push(r.day); });
+  return d.sort((a,b) => a-b);
+}
+// Curriculum text: plain lines become paragraphs, "- " lines become bullets.
+function fmtContent(text){
+  const lines = String(text || '').split(/\r?\n/).map(s => s.trim()).filter(s => s);
+  let html = '', inList = false;
+  lines.forEach(l => {
+    if(l.startsWith('- ')){
+      if(!inList){ html += '<ul class="list-disc pl-5 space-y-1 mb-2">'; inList = true; }
+      html += `<li class="text-sm text-text leading-relaxed">${esc(l.slice(2))}</li>`;
+    } else {
+      if(inList){ html += '</ul>'; inList = false; }
+      html += `<p class="text-sm text-text leading-relaxed mb-1.5">${esc(l)}</p>`;
+    }
+  });
+  if(inList) html += '</ul>';
+  return html;
+}
+function isTrainerUser(){
+  return !!(S.user && (S.user.trainer || String(S.user.role || '').toLowerCase() === 'manager'));
+}
+
+function renderTraining(){
+  const pane = $('tab-training');
+  const weeks = curricWeeks();
+  if(!weeks.length){
+    pane.innerHTML = `<p class="text-muted text-sm mt-4">No training curriculum yet. Add rows to the Training Curriculum sheet and they show up here.</p>`;
+    return;
+  }
+  const wk = (weeks.indexOf(S.training.week) !== -1) ? S.training.week : null;
+  if(wk === null){
+    const cards = weeks.map(w => `<button onclick="selectWeek(${w})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+      <p class="text-text font-medium text-lg">Week ${w}</p>
+      <p class="text-muted text-xs mt-1.5">${weekDays(w).length} day${weekDays(w).length===1?'':'s'} planned</p>
+    </button>`).join('');
+    pane.innerHTML = `
+      <h2 class="font-display text-2xl text-text mb-1">Training</h2>
+      <p class="text-muted text-sm mb-4">What week of training are you in?</p>
+      <div class="grid grid-cols-2 gap-3">${cards}</div>`;
+    return;
+  }
+
+  const days = weekDays(wk);
+  const dy = (days.indexOf(S.training.day) !== -1) ? S.training.day : null;
+  const chips = days.map(d => `<button onclick="selectDay(${d})" class="px-4 py-2 rounded-full text-sm border ${d===dy?'bg-gold text-bg border-gold font-semibold':'border-line text-text'}">Day ${d}</button>`).join('');
+  const trainerView = isTrainerUser();
+
+  const dayBlocks = (dy === null)
+    ? `<p class="text-muted text-sm">Pick your day above. Today's close-out gets logged to that day. You can still read the whole week below once you pick.</p>`
+    : days.map(d => {
+        const rows = S.curriculum.filter(r => r.week === wk && r.day === d);
+        const sel = d === dy;
+        return `<div class="bg-surface border ${sel?'border-gold':'border-line'} rounded-xl p-4 ${sel?'':'opacity-75'}">
+          <p class="text-xs uppercase tracking-wider ${sel?'text-gold':'text-golddim'} mb-1.5">Day ${d}${sel?' · your day':''}</p>
+          ${rows.map(r => `
+            ${r.title ? `<h3 class="font-display text-xl text-text mb-2">${esc(r.title)}</h3>` : ''}
+            ${fmtContent(r.content)}
+            ${trainerView && r.trainer_notes ? `<div class="border-l-2 border-gold pl-3 mt-3">
+              <p class="text-xs uppercase tracking-wider text-golddim mb-1">Trainer Notes</p>
+              <p class="text-sm text-muted leading-relaxed">${esc(r.trainer_notes)}</p></div>` : ''}
+          `).join('')}
+        </div>`;
+      }).join('');
+
+  pane.innerHTML = `
+    <button onclick="S.training={week:null,day:null};renderTraining()" class="text-gold text-sm mb-3">&larr; Weeks</button>
+    <h2 class="font-display text-2xl text-text mb-2">Week ${wk}</h2>
+    <div class="flex gap-2 flex-wrap mb-4">${chips}</div>
+    <div class="space-y-3">${dayBlocks}</div>
+    ${dy !== null ? `<button onclick="startCloseout()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}`;
+}
+function selectWeek(w){ S.training.week = w; S.training.day = null; renderTraining(); }
+function selectDay(d){ S.training.day = d; renderTraining(); }
+
+/* ---- End-of-day close-out ------------------------------------------------ */
+function startCloseout(){
+  const pane = $('tab-training');
+  const qs = (S.closeoutQs || []).map((q,i) => `
+    <div class="mb-4"><p class="text-sm text-text mb-1.5">${esc(q)}</p>
+    <textarea id="co_q_${i}" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>`).join('');
+  pane.innerHTML = `
+    <p class="text-xs uppercase tracking-wider text-golddim">Week ${S.training.week} · Day ${S.training.day}</p>
+    <h2 class="font-display text-2xl text-text mt-1 mb-4">Close Out Your Day</h2>
+    ${qs}
+    <div class="mb-4"><p class="text-sm text-text mb-1.5">Where do you feel strong right now?</p>
+    <textarea id="co_strong" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>
+    <div class="mb-4"><p class="text-sm text-text mb-1.5">Where do you not feel strong yet?</p>
+    <textarea id="co_weak" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>
+    <p id="coErr" class="text-fail text-sm mb-2 hidden"></p>
+    <button onclick="submitCloseout()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Submit and Get Trainer Sign-Off →</button>
+    <button onclick="renderTraining()" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back</button>`;
+}
+async function submitCloseout(){
+  const qa = (S.closeoutQs || []).map((q,i) => q + '\n' + (($('co_q_'+i)||{}).value || '').trim()).join('\n\n');
+  showLoader('Saving your day…');
+  try {
+    const r = await apiPost({ action:'submitCloseout',
+      first:S.user.first_name, last:S.user.last_name,
+      week:S.training.week, day:S.training.day, q_and_a: qa,
+      feel_strong: ($('co_strong').value || '').trim(),
+      feel_weak: ($('co_weak').value || '').trim() });
+    hideLoader();
+    if(!r || !r.ok){ const e = $('coErr'); e.textContent = (r && r.error) || 'Could not save. Try again.'; show(e); return; }
+    startSignoff();
+  } catch(err){ hideLoader(); const e = $('coErr'); e.textContent = 'Connection problem. Try again.'; show(e); }
+}
+
+/* ---- Trainer sign-off (hand the device to the trainer) ------------------- */
+function startSignoff(){
+  const pane = $('tab-training');
+  const qs = (S.trainerQs || []).map((q,i) => `
+    <div class="mb-4"><p class="text-sm text-text mb-1.5">${esc(q)}</p>
+    <textarea id="so_q_${i}" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>`).join('');
+  pane.innerHTML = `
+    <div class="bg-surface border border-gold rounded-xl p-4 mb-5 text-center">
+      <p class="font-display text-xl text-gold">Day logged. Now hand this to your trainer.</p>
+    </div>
+    <p class="text-xs uppercase tracking-wider text-golddim mb-2">Trainer Sign-Off · Week ${S.training.week}, Day ${S.training.day} · ${esc(S.user.first_name+' '+S.user.last_name)}</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <input id="so_first" placeholder="Trainer first name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
+      <input id="so_last" placeholder="Trainer last name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
+    </div>
+    <input id="so_pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Trainer PIN"
+      class="pin-mask w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text tracking-[0.5em] placeholder-muted mb-5"/>
+    ${qs}
+    <div class="mb-4"><p class="text-sm text-text mb-1.5">Anything else? (optional)</p>
+    <textarea id="so_notes" rows="3" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>
+    <p id="soErr" class="text-fail text-sm mb-2 hidden"></p>
+    <button onclick="submitSignoff()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Sign Off and Finish the Day</button>
+    <button onclick="finishDayNoSignoff()" class="mt-2 w-full text-muted text-xs py-2">No trainer available right now? Finish without sign-off</button>`;
+}
+async function submitSignoff(){
+  const qa = (S.trainerQs || []).map((q,i) => q + '\n' + (($('so_q_'+i)||{}).value || '').trim()).join('\n\n');
+  showLoader('Saving sign-off…');
+  try {
+    const r = await apiPost({ action:'submitSignoff',
+      trainer_first: ($('so_first').value || '').trim(),
+      trainer_last:  ($('so_last').value || '').trim(),
+      trainer_pin:   ($('so_pin').value || '').trim(),
+      first:S.user.first_name, last:S.user.last_name,
+      week:S.training.week, day:S.training.day,
+      q_and_a: qa, notes: ($('so_notes').value || '').trim() });
+    hideLoader();
+    if(!r || !r.ok){ const e = $('soErr'); e.textContent = (r && r.error) || 'Could not save. Try again.'; show(e); return; }
+    dayComplete(false);
+  } catch(err){ hideLoader(); const e = $('soErr'); e.textContent = 'Connection problem. Try again.'; show(e); }
+}
+function finishDayNoSignoff(){ dayComplete(true); }
+// End of the training day: celebrate, then log out so the next person starts clean.
+function dayComplete(skipped){
+  $('tab-training').innerHTML = `
+    <div class="max-w-md mx-auto text-center mt-10 fade-in">
+      <p class="font-display text-3xl text-pass">Training day complete.</p>
+      <p class="text-muted text-sm mt-3">${skipped ? 'Your close-out is saved. Ask your trainer to sign off on your next shift.' : 'Nice work today. See you next shift.'}</p>
+      <p class="text-muted text-xs mt-6">Logging out…</p>
+    </div>`;
+  setTimeout(logout, 2500);
 }
 
 /* ===========================================================================
@@ -2248,8 +2429,9 @@ function drawTeam(d){
     const mastered = a.mastered ? a.mastered.size : 0;
     const editing = (i === teamEditIdx);
     const roleCell = editing
-      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text mt-1">${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>`
-      : `<span class="text-[11px] text-muted">${esc(s.role||'')}</span>`;
+      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text mt-1">${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>
+         <label class="block text-[11px] text-muted mt-1"><input type="checkbox" id="team_tr_${i}" ${s.trainer?'checked':''}/> Trainer</label>`
+      : `<span class="text-[11px] text-muted">${esc(s.role||'')}${s.trainer?' · 🎓 Trainer':''}</span>`;
     const pinCell = editing
       ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
       : `<span class="text-text tracking-widest">${esc(s.pin)}</span>`;
@@ -2292,6 +2474,23 @@ function drawTeam(d){
     <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Tasted</h3>
     <div class="bg-surface border border-line rounded-xl p-4 mb-6">${tastedRows}</div>`;
 
+  // Training activity: latest close-outs and sign-offs, newest first.
+  const tlog = (d.trainingLog || []).slice(-8).reverse();
+  const soffs = (d.signoffs || []).slice(-8).reverse();
+  const tlogRows = tlog.map(x => `<div class="py-2 border-b border-line last:border-0">
+      <p class="text-sm text-text">${esc((x.first_name+' '+x.last_name).trim())} <span class="text-muted text-xs">closed out Week ${x.week}, Day ${x.day} · ${fmtDate(x.date)}</span></p>
+      ${x.feel_weak ? `<p class="text-xs text-muted mt-0.5">Needs work: ${esc(x.feel_weak)}</p>` : ''}
+    </div>`).join('') || `<p class="text-muted text-sm">No training close-outs yet.</p>`;
+  const soffRows = soffs.map(x => `<div class="py-2 border-b border-line last:border-0">
+      <p class="text-sm text-text">${esc((x.trainee_first+' '+x.trainee_last).trim())} <span class="text-muted text-xs">signed off by ${esc((x.trainer_first+' '+x.trainer_last).trim())} · Week ${x.week}, Day ${x.day} · ${fmtDate(x.date)}</span></p>
+      ${x.notes ? `<p class="text-xs text-muted mt-0.5">${esc(x.notes)}</p>` : ''}
+    </div>`).join('') || `<p class="text-muted text-sm">No sign-offs yet.</p>`;
+  const trainingHtml = `
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Training Close-Outs</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${tlogRows}</div>
+    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Trainer Sign-Offs</h3>
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${soffRows}</div>`;
+
   const abRows = abandoned.slice()
     .sort((x,y)=> new Date(y.timestamp_abandoned)-new Date(x.timestamp_abandoned))
     .map(x => `<tr class="border-b border-line">
@@ -2331,6 +2530,8 @@ function drawTeam(d){
         </tr></thead><tbody>${rows}</tbody>
       </table>
     </div>
+
+    ${trainingHtml}
 
     ${tastingHtml}
 
@@ -2373,8 +2574,10 @@ async function teamSave(i){
   if(pin && !/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
   showLoader('Saving…');
   try {
+    const tr = $('team_tr_'+i);
     const r = await apiPost({ action:'updateStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
-      target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin });
+      target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin,
+      new_trainer: tr ? !!tr.checked : undefined });
     hideLoader();
     if(!r.ok){ alert(r.error||'Could not save.'); return; }
     teamEditIdx = -1; renderTeam();

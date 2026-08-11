@@ -134,7 +134,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v9</p>
+    <p id="verLine" class="text-center text-line text-[10px] mt-3">app v10</p>
   </div>
 </section>
 
@@ -149,7 +149,6 @@
       <div class="flex items-center justify-between py-3">
         <div class="flex items-center gap-2.5">
           <div id="headerLogo" class="flex items-center"></div>
-          <span class="text-[11px] text-golddim tracking-[0.3em] uppercase">Training</span>
         </div>
         <div class="flex items-center gap-3">
           <!-- Who's logged in, made loud on purpose: on a shared device the next
@@ -161,10 +160,10 @@
 
       <!-- Tab bar -->
       <nav class="flex gap-1">
-        <button data-tab="training" onclick="switchTab('training')" class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🎓 Training</button>
-        <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📖 Study</button>
-        <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🗺️ Floor</button>
+        <button data-tab="training" onclick="switchTab('training')" class="tabBtn hidden flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🎓 Training</button>
         <button data-tab="duties"   onclick="switchTab('duties')"   class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">✅ Duties</button>
+        <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">🗺️ Floor</button>
+        <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📖 Study</button>
         <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">✏️ Test</button>
         <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">📊 Progress</button>
         <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors">👥 Team</button>
@@ -215,7 +214,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 9;           // shown on the login screen; bump with each release
+const APP_VERSION = 10;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -538,8 +537,9 @@ function enterApp(opts){
   hide($('view-login'));
   show($('view-main'));
   $('headerUser').innerHTML = '👤 ' + esc(S.user.first_name + ' ' + S.user.last_name);
-  updateTeamTabVisibility();   // the Team tab only exists for managers
-  resetIdleTimer();            // shared-device safety: idle sessions log out
+  updateTeamTabVisibility();       // the Team tab only exists for managers
+  updateTrainingTabVisibility();   // the Training tab only for trainees/trainers
+  resetIdleTimer();                // shared-device safety: idle sessions log out
   // If they refreshed mid-test, it's logged as left-early and they land on the test list.
   const wasMidTest = checkAbandonedOnReturn();
   let tab = 'study';
@@ -547,8 +547,9 @@ function enterApp(opts){
     tab = 'test';
   } else if(opts.fromRefresh){
     const saved = sessionStorage.getItem('bonsake_tab');
-    if(saved && ['study','test','progress','team'].includes(saved)) tab = saved;
+    if(saved && ['training','study','floor','duties','test','progress','team'].includes(saved)) tab = saved;
     if(tab === 'team' && !isManager()) tab = 'study';
+    if(tab === 'training' && !canSeeTraining()) tab = 'study';
   }
   switchTab(tab);
 }
@@ -556,6 +557,16 @@ function enterApp(opts){
 function updateTeamTabVisibility(){
   const btn = document.querySelector('.tabBtn[data-tab="team"]');
   if(btn) btn.classList.toggle('hidden', !isManager());
+}
+
+// The Training tab only exists for people in training (manager-designated via
+// training_for in the Staff Registry) and for trainers/managers who run it.
+function canSeeTraining(){
+  return !!(S.user && (S.user.training_for || S.user.trainer || isManager()));
+}
+function updateTrainingTabVisibility(){
+  const btn = document.querySelector('.tabBtn[data-tab="training"]');
+  if(btn) btn.classList.toggle('hidden', !canSeeTraining());
 }
 
 /* ---- Idle auto-logout (shared-device safety) ------------------------------
@@ -595,7 +606,7 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   S.dishNotes = {}; S.testBrowse = { section:null }; S.floorBrowse = { room:null };
-  S.training = { week:null, day:null }; S.duty = null;
+  S.training = { week:null, day:null }; S.duty = null; _dutyJob = null;
   clearTimeout(_idleTimer);
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
@@ -1167,8 +1178,20 @@ function dutyTasksFor(list){
     .sort((a,b) => a.order - b.order)
     .map(r => r.task);
 }
-// Bussers work the whole house, so their lists skip the table picker.
-function listNeedsTables(list){ return !/^busser/i.test(list); }
+// Which job a checklist belongs to. Lists that don't name a job are for servers.
+const DUTY_JOBS = ['Busser','Runner','Server','Bartender'];
+function dutyJobFor(list){
+  const l = String(list).toLowerCase();
+  if(l.indexOf('busser') !== -1) return 'Busser';
+  if(l.indexOf('runner') !== -1) return 'Runner';
+  if(l.indexOf('bartender') !== -1) return 'Bartender';
+  return 'Server';
+}
+// Words with their first letter capitalized, per the house style for duties.
+function dutyCase(s){
+  return String(s || '').split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
+}
+let _dutyJob = null;
 
 function renderDuties(){
   const pane = $('tab-duties');
@@ -1178,22 +1201,40 @@ function renderDuties(){
     pane.innerHTML = `<p class="text-muted text-sm mt-4">No checklists yet. Add rows to the Duty Checklists sheet and they show up here.</p>`;
     return;
   }
-  const cards = names.map((n,i) => {
+  // Screen 1: which job are you doing duties for?
+  if(!_dutyJob){
+    const cards = DUTY_JOBS.map(j => {
+      const n = names.filter(nm => dutyJobFor(nm) === j).length;
+      return `<button onclick="dutyPickJob('${j}')" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+        <p class="text-text font-medium text-lg leading-snug">${j}</p>
+        <p class="text-muted text-xs mt-1.5">${n} checklist${n===1?'':'s'}</p>
+      </button>`;
+    }).join('');
+    pane.innerHTML = `
+      <h2 class="font-display text-2xl text-text mb-1">Duties</h2>
+      <p class="text-muted text-sm mb-4">What job are you completing duties for?</p>
+      <div class="grid grid-cols-2 gap-3">${cards}</div>`;
+    return;
+  }
+  // Screen 2: that job's checklists.
+  const jobLists = names.filter(nm => dutyJobFor(nm) === _dutyJob);
+  const cards = jobLists.map(n => {
     const count = dutyTasksFor(n).length;
-    return `<button onclick="dutyPick(${i})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+    return `<button onclick="dutyPickList('${esc(n).replace(/'/g,"\\'")}')" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
       <p class="text-text font-medium text-base leading-snug">${esc(n)}</p>
       <p class="text-muted text-xs mt-1.5">${count} task${count===1?'':'s'} today</p>
     </button>`;
   }).join('');
   pane.innerHTML = `
-    <h2 class="font-display text-2xl text-text mb-1">Duties</h2>
-    <p class="text-muted text-sm mb-4">Pick your checklist. Tasks come three at a time, in the order that flows best.</p>
-    <div class="grid grid-cols-2 gap-3">${cards}</div>`;
+    <button onclick="_dutyJob=null;renderDuties()" class="text-gold text-sm mb-3">&larr; Jobs</button>
+    <h2 class="font-display text-2xl text-text mb-1">${esc(_dutyJob)} Duties</h2>
+    <p class="text-muted text-sm mb-4">${jobLists.length ? 'Pick your checklist.' : ''}</p>
+    ${jobLists.length ? `<div class="grid grid-cols-2 gap-3">${cards}</div>` : `<p class="text-muted text-sm">No ${esc(_dutyJob)} checklists yet. They'll appear here once they're added to the sheet.</p>`}`;
 }
-function dutyPick(i){
-  const list = dutyListNames()[i]; if(!list) return;
-  if(!listNeedsTables(list)) return dutyBegin(list, []);
-  renderDutyTables(list);
+function dutyPickJob(j){ _dutyJob = j; renderDuties(); }
+function dutyPickList(list){
+  if(_dutyJob === 'Server') renderDutyTables(list);
+  else dutyBegin(list, []);
 }
 
 /* ---- Table picker: tap the tables that were in your section -------------- */
@@ -1238,7 +1279,7 @@ function dutyBegin(list, tables){
   const tasks = dutyTasksFor(list);
   if(!tasks.length) return;
   const cards = [];
-  for(let i = 0; i < tasks.length; i += 3) cards.push(tasks.slice(i, i+3));
+  for(let i = 0; i < tasks.length; i += 5) cards.push(tasks.slice(i, i+5));
   S.duty = {
     runId: 'D' + Date.now() + Math.floor(Math.random()*1000),
     list, tables: (tables || []).slice(),
@@ -1254,13 +1295,15 @@ function renderDutyRun(){
   const d = S.duty;
   const card = d.cards[d.idx];
   const total = d.cards.length;
-  const allChecked = d.done[d.idx].every(Boolean);
-  const pct = Math.round((d.idx / total) * 100);
+  const totalTasks = d.cards.reduce((n,c) => n + c.length, 0);
+  const doneTasks = d.done.reduce((n,c) => n + c.filter(Boolean).length, 0);
+  const allDone = doneTasks === totalTasks;
+  const pct = Math.round((doneTasks / totalTasks) * 100);
   const items = card.map((task,i) => {
     const on = d.done[d.idx][i];
     return `<button onclick="dutyToggle(${i})" class="w-full text-left flex items-start gap-3 border rounded-xl px-4 py-4 mb-3 transition-colors ${on?'border-pass bg-pass/10':'border-line bg-surface'}">
       <span class="flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-sm ${on?'border-pass bg-pass text-bg':'border-line text-transparent'}">✓</span>
-      <span class="text-sm leading-relaxed ${on?'text-muted line-through':'text-text'}">${esc(task)}</span>
+      <span class="text-sm leading-relaxed ${on?'text-muted line-through':'text-text'}">${esc(dutyCase(task))}</span>
     </button>`;
   }).join('');
   const last = d.idx === total - 1;
@@ -1268,22 +1311,33 @@ function renderDutyRun(){
     <div class="max-w-xl mx-auto">
       <div class="flex items-center justify-between text-xs mb-2">
         <span class="text-gold uppercase tracking-wider">${esc(d.list)}</span>
-        <span class="text-muted">Card ${d.idx+1} of ${total}</span>
+        <span class="text-muted">Card ${d.idx+1} of ${total} · ${doneTasks}/${totalTasks} done</span>
       </div>
       <div class="h-1.5 bg-line rounded-full mb-4 overflow-hidden"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
       ${d.tables.length ? `<p class="text-xs text-muted mb-3">Your tables: ${esc(d.tables.join(', '))}</p>` : ''}
       ${items}
-      <button onclick="dutyNext()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${allChecked?'':'opacity-40 pointer-events-none'}">${last?'Finish':'Next'}</button>
+      ${last
+        ? `<button onclick="dutyNext()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${allDone?'':'opacity-40 pointer-events-none'}">Finish</button>
+           ${allDone ? '' : `<p class="text-xs text-muted text-center mt-2">${totalTasks-doneTasks} task${totalTasks-doneTasks===1?' is':'s are'} still unchecked. You can move between cards freely.</p>`}`
+        : `<button onclick="dutyNext()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next</button>`}
       ${d.idx > 0 ? `<button onclick="dutyBack()" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back a card</button>` : ''}
+      <button onclick="dutyLeave()" class="mt-4 w-full text-muted text-xs py-2">Leave this checklist</button>
     </div>`;
 }
 function dutyToggle(i){ S.duty.done[S.duty.idx][i] = !S.duty.done[S.duty.idx][i]; renderDutyRun(); }
 function dutyBack(){ if(S.duty.idx > 0){ S.duty.idx--; renderDutyRun(); } }
 function dutyNext(){
   const d = S.duty;
-  if(!d.done[d.idx].every(Boolean)) return;
   if(d.idx < d.cards.length - 1){ d.idx++; renderDutyRun(); return; }
+  const totalTasks = d.cards.reduce((n,c) => n + c.length, 0);
+  const doneTasks = d.done.reduce((n,c) => n + c.filter(Boolean).length, 0);
+  if(doneTasks !== totalTasks) return;
   dutyConfirm();
+}
+function dutyLeave(){
+  if(!confirm('Leave this checklist? Your checkmarks will not be saved.')) return;
+  S.duty = null;
+  renderDuties();
 }
 // "Are you sure you are done?" before anything is submitted.
 function dutyConfirm(){
@@ -1317,14 +1371,26 @@ async function dutySubmit(){
 /* ===========================================================================
    TRAINING TAB (curriculum by week/day, daily close-out, trainer sign-off)
 =========================================================================== */
+// The curriculum a viewer actually sees. Trainees get rows for their position
+// (plus rows with no position, which are for everyone). Trainers and managers
+// see everything, optionally narrowed by the position chips.
+function curricRows(){
+  const all = S.curriculum || [];
+  if(isTrainerUser()){
+    const pick = S.training.pos || '';
+    return pick ? all.filter(r => !r.position || r.position === pick) : all;
+  }
+  const mine = (S.user && S.user.training_for) || '';
+  return all.filter(r => !r.position || r.position === mine);
+}
 function curricWeeks(){
   const w = [];
-  (S.curriculum || []).forEach(r => { if(w.indexOf(r.week) === -1) w.push(r.week); });
+  curricRows().forEach(r => { if(w.indexOf(r.week) === -1) w.push(r.week); });
   return w.sort((a,b) => a-b);
 }
 function weekDays(week){
   const d = [];
-  (S.curriculum || []).forEach(r => { if(r.week === week && d.indexOf(r.day) === -1) d.push(r.day); });
+  curricRows().forEach(r => { if(r.week === week && d.indexOf(r.day) === -1) d.push(r.day); });
   return d.sort((a,b) => a-b);
 }
 // Curriculum text: plain lines become paragraphs, "- " lines become bullets.
@@ -1356,13 +1422,24 @@ function renderTraining(){
   }
   const wk = (weeks.indexOf(S.training.week) !== -1) ? S.training.week : null;
   if(wk === null){
+    // Trainers and managers can flip between the position plans.
+    const posChips = isTrainerUser() ? (function(){
+      const ps = [];
+      (S.curriculum || []).forEach(r => { if(r.position && ps.indexOf(r.position) === -1) ps.push(r.position); });
+      if(!ps.length) return '';
+      const cur = S.training.pos || '';
+      return `<div class="flex gap-2 flex-wrap mb-4">${['',...ps].map(p =>
+        `<button onclick="S.training.pos='${p}';S.training.week=null;renderTraining()"
+          class="px-3 py-1.5 rounded-full text-xs border ${cur===p?'bg-gold text-bg border-gold font-semibold':'border-line text-muted'}">${p||'All plans'}</button>`).join('')}</div>`;
+    })() : '';
     const cards = weeks.map(w => `<button onclick="selectWeek(${w})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
       <p class="text-text font-medium text-lg">Week ${w}</p>
       <p class="text-muted text-xs mt-1.5">${weekDays(w).length} day${weekDays(w).length===1?'':'s'} planned</p>
     </button>`).join('');
     pane.innerHTML = `
-      <h2 class="font-display text-2xl text-text mb-1">Training</h2>
+      <h2 class="font-display text-2xl text-text mb-1">Training${S.user && S.user.training_for ? ` · ${esc(S.user.training_for)}` : ''}</h2>
       <p class="text-muted text-sm mb-4">What week of training are you in?</p>
+      ${posChips}
       <div class="grid grid-cols-2 gap-3">${cards}</div>`;
     return;
   }
@@ -1375,7 +1452,7 @@ function renderTraining(){
   const dayBlocks = (dy === null)
     ? `<p class="text-muted text-sm">Pick your day above. Today's close-out gets logged to that day. You can still read the whole week below once you pick.</p>`
     : days.map(d => {
-        const rows = S.curriculum.filter(r => r.week === wk && r.day === d);
+        const rows = curricRows().filter(r => r.week === wk && r.day === d);
         const sel = d === dy;
         return `<div class="bg-surface border ${sel?'border-gold':'border-line'} rounded-xl p-4 ${sel?'':'opacity-75'}">
           <p class="text-xs uppercase tracking-wider ${sel?'text-gold':'text-golddim'} mb-1.5">Day ${d}${sel?' · your day':''}</p>
@@ -1518,8 +1595,12 @@ function markerTile(t){
     const vert = t.h > t.w ? 'writing-mode:vertical-rl;' : '';
     return `<div class="absolute flex items-center justify-center border-2 border-pass/60 rounded-lg text-pass text-[10px] font-semibold tracking-widest" style="${pos}${vert}">${label}</div>`;
   }
-  if(t.kind === 'door')
-    return `<div class="absolute flex items-center justify-center border border-gold/70 bg-gold/10 rounded-md text-gold text-[9px] sm:text-[10px] font-semibold px-1 text-center leading-tight" style="${pos}">⇄ ${label}</div>`;
+  if(t.kind === 'door'){
+    // A label can carry its own arrows (e.g. "⇅ Main Entrance") to control
+    // direction from the sheet; otherwise doors default to horizontal arrows.
+    const hasArrow = /^[⇄⇅↔↕←→↑↓]/.test(t.table);
+    return `<div class="absolute flex items-center justify-center border border-gold/70 bg-gold/10 rounded-md text-gold text-[9px] sm:text-[10px] font-semibold px-1 text-center leading-tight" style="${pos}">${hasArrow ? label : '⇄ ' + label}</div>`;
+  }
   if(t.kind === 'host' || t.kind === 'station')
     return `<div class="absolute flex items-center justify-center border border-gold bg-gold/15 rounded-md text-gold text-[9px] sm:text-[10px] font-semibold uppercase tracking-wide px-1 text-center leading-tight" style="${pos}">${label}</div>`;
   if(t.kind === 'stairs')
@@ -2006,7 +2087,10 @@ function renderQuestion(){
         <span class="text-muted">Question ${t.idx+1} of ${t.questions.length}</span>
       </div>
       <div class="h-1.5 bg-line rounded-full mt-2 overflow-hidden"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
-      <p class="text-xs text-muted mt-1.5">${t.correct} correct · ${t.wrong} wrong</p>
+      <div class="flex items-center justify-between mt-1.5">
+        <p class="text-xs text-muted">${t.correct} correct · ${t.wrong} wrong</p>
+        <button onclick="leaveTest()" class="text-xs text-muted underline">Leave this test</button>
+      </div>
     </div>`;
 
   let bodyHtml = '';
@@ -2292,6 +2376,25 @@ function recordOutcome(right, item){
 }
 
 function nextQuestion(){ S.test.idx++; renderQuestion(); }
+
+// Bail out of a test in progress. Nothing partial is ever saved: the attempt
+// is logged as left-early and the next open starts the test fresh.
+function leaveTest(){
+  if(!confirm('Leave this test? Your progress will not be saved.')) return;
+  const t = S.test;
+  try {
+    apiPost({ action:'logAbandon',
+      first:S.user.first_name, last:S.user.last_name,
+      test_section:t.section, test_level:t.level,
+      timestamp_started: new Date(t.started).toISOString(),
+      questions_completed: t.idx, total_questions: t.questions.length });
+  } catch(e){}
+  clearAbandonFlag();
+  S.test = null;
+  S.testActive = false;
+  applyNavLockStyles();
+  switchTab('test');
+}
 
 // Reveals the post-answer button. On the final question it leads to the score
 // screen, so it says so instead of promising a question that doesn't exist.
@@ -2671,10 +2774,13 @@ function drawTeam(d){
     const mastered = a.mastered ? a.mastered.size : 0;
     const editing = (i === teamEditIdx);
     const roleCell = editing
-      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text mt-1">${['Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>
+      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text mt-1">${['Busser','Runner','Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>
          <label class="block text-[11px] text-muted mt-1"><input type="checkbox" id="team_tr_${i}" ${s.trainer?'checked':''}/> Trainer</label>
-         <label class="block text-[11px] text-muted"><input type="checkbox" id="team_sl_${i}" ${s.shift_lead?'checked':''}/> Shift Lead</label>`
-      : `<span class="text-[11px] text-muted">${esc(s.role||'')}${s.trainer?' · 🎓 Trainer':''}${s.shift_lead?' · ⭐ Shift Lead':''}</span>`;
+         <label class="block text-[11px] text-muted"><input type="checkbox" id="team_sl_${i}" ${s.shift_lead?'checked':''}/> Shift Lead</label>
+         <label class="block text-[11px] text-muted mt-1">Training for:
+           <select id="team_tf_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-[11px] text-text">${['','Busser','Runner','Server','Bartender'].map(p=>`<option value="${p}" ${String(s.training_for||'')===p?'selected':''}>${p||'Not in training'}</option>`).join('')}</select>
+         </label>`
+      : `<span class="text-[11px] text-muted">${esc(s.role||'')}${s.trainer?' · 🎓 Trainer':''}${s.shift_lead?' · ⭐ Shift Lead':''}${s.training_for?` · 📘 Training: ${esc(s.training_for)}`:''}</span>`;
     const pinCell = editing
       ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
       : `<span class="text-text tracking-widest">${esc(s.pin)}</span>`;
@@ -2755,7 +2861,7 @@ function drawTeam(d){
         <input id="add_first" placeholder="First name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
         <input id="add_last" placeholder="Last name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
         <select id="add_role" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text">
-          <option>Server</option><option>Bartender</option><option>Manager</option>
+          <option>Busser</option><option>Runner</option><option selected>Server</option><option>Bartender</option><option>Manager</option>
         </select>
         <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
       </div>
@@ -2877,11 +2983,12 @@ async function teamSave(i){
   if(pin && !/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
   showLoader('Saving…');
   try {
-    const tr = $('team_tr_'+i), sl = $('team_sl_'+i);
+    const tr = $('team_tr_'+i), sl = $('team_sl_'+i), tf = $('team_tf_'+i);
     const r = await apiPost({ action:'updateStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
       target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin,
       new_trainer: tr ? !!tr.checked : undefined,
-      new_shift_lead: sl ? !!sl.checked : undefined });
+      new_shift_lead: sl ? !!sl.checked : undefined,
+      new_training_for: tf ? tf.value : undefined });
     hideLoader();
     if(!r.ok){ alert(r.error||'Could not save.'); return; }
     teamEditIdx = -1; renderTeam();

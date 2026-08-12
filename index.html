@@ -154,7 +154,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v12</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v13</p>
   </div>
 </section>
 
@@ -253,7 +253,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 12;           // shown on the login screen; bump with each release
+const APP_VERSION = 13;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -841,6 +841,7 @@ function enterApp(opts){
   updateTeamTabVisibility();       // the Team tab only exists for managers
   updateTrainingTabVisibility();   // the Training tab only for trainees/trainers
   resetIdleTimer();                // shared-device safety: idle sessions log out
+  progressView = isManager() ? 'team' : 'me';   // managers open Progress on the team view
   // If they refreshed mid-test, it's logged as left-early and they land on the test list.
   const wasMidTest = checkAbandonedOnReturn();
   // Trainees land on their training plan — that's where their day starts.
@@ -1598,10 +1599,17 @@ function renderDuties(){
         <p class="text-muted text-xs mt-1.5">${n} checklist${n===1?'':'s'}</p>
       </button>`;
     }).join('');
+    // Managers and shift leads see tonight's runs right here, where the
+    // people who verify checklists can actually reach them.
+    const tonight = canVerifyDuties() ? `
+      <h3 class="text-sm uppercase tracking-wider text-golddim mt-8 mb-2">Tonight's Duties</h3>
+      <div id="dutyRunsBody" class="bg-surface border border-line rounded-xl p-4"><p class="text-muted text-sm">Loading…</p></div>` : '';
     pane.innerHTML = `
       <h2 class="font-display text-2xl text-text mb-1">Duties</h2>
       <p class="text-muted text-sm mb-4">What job are you completing duties for?</p>
-      <div class="grid grid-cols-2 gap-3">${cards}</div>`;
+      <div class="grid grid-cols-2 gap-3">${cards}</div>
+      ${tonight}`;
+    if(canVerifyDuties()) loadDutyRuns();
     return;
   }
   // Screen 2: that job's checklists. Tap one or several (a server opening two
@@ -3205,7 +3213,7 @@ async function answerTried(itemId, yes){
 }
 
 // After finishing a test, send the user straight to their Progress tab (still logged in).
-function returnToMenu(){ progressView = 'me'; switchTab('progress'); }
+function returnToMenu(){ progressView = isManager() ? 'team' : 'me'; switchTab('progress'); }
 
 // Study link from the score screen — keeps the user logged in
 function openStudyItem(itemId){
@@ -3224,6 +3232,8 @@ let progressView = 'me';  // 'me' | 'leaderboard'
 
 function renderProgress(){
   if(progressView === 'leaderboard') return renderLeaderboard();
+  // Managers land on the team view: their Progress is the TEAM's progress.
+  if(progressView === 'team' && isManager()) return renderTeamProgress();
   const pane = $('tab-progress');
   const res = S.results.slice();
 
@@ -3339,9 +3349,12 @@ function renderProgress(){
   }).join('') || `<tr><td colspan="5" class="py-3 text-muted text-sm">No tests taken yet.</td></tr>`;
 
   pane.innerHTML = `
-    <div class="mb-4">
-      <h2 class="font-display text-2xl text-text">Welcome back, ${esc(S.user.first_name)}</h2>
-      <p class="text-xs text-muted mt-0.5">Last test taken: ${fmtDate(lastTaken)} · Last test passed: ${fmtDate(lastPassed)}</p>
+    <div class="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h2 class="font-display text-2xl text-text">Welcome back, ${esc(S.user.first_name)}</h2>
+        <p class="text-xs text-muted mt-0.5">Last test taken: ${fmtDate(lastTaken)} · Last test passed: ${fmtDate(lastPassed)}</p>
+      </div>
+      ${isManager() ? `<button onclick="progressView='team';renderProgress()" class="text-xs text-muted border border-line rounded-lg px-3 py-2 flex-shrink-0">Team progress</button>` : ''}
     </div>
 
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
@@ -3377,13 +3390,33 @@ function renderProgress(){
     </div>`;
 }
 
-function toggleLeaderboard(){ progressView = progressView==='me' ? 'leaderboard' : 'me'; renderProgress(); }
+function toggleLeaderboard(){
+  progressView = (progressView === 'leaderboard') ? (isManager() ? 'team' : 'me') : 'leaderboard';
+  renderProgress();
+}
 
 /* ===========================================================================
    TEAM TAB  (managers only) — combined roster + add / edit / remove members
 =========================================================================== */
-function isManager(){ return !!(S.user && String(S.user.role||'').toLowerCase()==='manager'); }
+// A role cell can hold several jobs ("Server, Bartender"). Admin is the owner
+// tier: every manager permission plus managing managers and app settings.
+function userRoles(){ return String((S.user && S.user.role) || '').split(/[,|/]/).map(s => s.trim().toLowerCase()).filter(Boolean); }
+function isAdmin(){ return userRoles().indexOf('admin') !== -1; }
+function isManager(){ const r = userRoles(); return r.indexOf('manager') !== -1 || r.indexOf('admin') !== -1; }
 let teamEditIdx = -1;   // index of the roster row currently being edited (-1 = none)
+
+/* The Team tab answers ONE question now: who works here. Tonight's duty runs
+   live on the Duties tab; training activity, tastings, and abandoned tests
+   live in the manager's Progress view. Splitting by question is also what
+   makes this screen fast: it only needs the roster. */
+const STAFF_CACHE_KEY = 'bonsake_staffcache';
+// PINs never touch localStorage — the cached copy paints with them blanked
+// and the live refresh fills them in a beat later.
+function stripPins(d){
+  return Object.assign({}, d, { staff: (d.staff||[]).map(s => Object.assign({}, s, { pin:'' })) });
+}
+function teamCacheLoad(){ try { return JSON.parse(localStorage.getItem(STAFF_CACHE_KEY) || 'null'); } catch(e){ return null; } }
+function teamCacheSave(d){ try { localStorage.setItem(STAFF_CACHE_KEY, JSON.stringify(stripPins(d))); } catch(e){ reportError('staff-cache', e); } }
 
 async function renderTeam(){
   const pane = $('tab-team');
@@ -3391,44 +3424,50 @@ async function renderTeam(){
     <h2 class="font-display text-2xl text-text mb-4">Team</h2>
     <div id="teamBody"><p class="text-muted text-sm">Loading team…</p></div>`;
   teamEditIdx = -1;
+  // Paint instantly from the last copy, then refresh quietly in the background.
+  const cached = teamCacheLoad();
+  if(cached){ S.staffData = cached; drawTeam(cached); }
   try {
-    const r = await apiPost({ action:'managerData', first:S.user.first_name, last:S.user.last_name, pin:S.pin });
-    if(!r.ok){ $('teamBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load team data.')}</p>`; return; }
-    S.managerData = r;
-    drawTeam(r);
+    const r = await apiPost({ action:'managerStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin });
+    if(!r.ok){
+      if(!cached) $('teamBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load team data.')}</p>`;
+      return;
+    }
+    S.staffData = r;
+    teamCacheSave(r);
+    if(teamEditIdx === -1) drawTeam(r);   // don't yank the rug mid-edit
   } catch(e){
-    $('teamBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the team. Check your connection.</p>`;
+    if(!cached) $('teamBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the team. Check your connection.</p>`;
   }
 }
 
+const TEAM_JOBS = ['Busser','Runner','Server','Bartender'];
+function staffRoles(s){ return String(s.role||'').split(/[,|/]/).map(x => x.trim()).filter(Boolean); }
+
 function drawTeam(d){
-  const staff = d.staff||[], results = d.results||[], abandoned = d.abandoned||[], tastings = d.tastings||[];
+  const staff = d.staff || [];
 
-  // Aggregate each member's results (avg = all attempts, matching their Overall Score)
-  const agg = {};
-  results.forEach(x => {
-    const name = (x.first_name+' '+x.last_name).trim();
-    if(!agg[name]) agg[name] = { tests:0, sum:0, mastered:new Set() };
-    agg[name].tests++; agg[name].sum += Number(x.score_percent||0);
-    if(String(x.test_type||'')==='dish' && Number(x.test_level)===2 && String(x.pass_fail).toUpperCase()==='PASS' && x.item_id)
-      agg[name].mastered.add(String(x.item_id));
-  });
-
-  // One combined table: Name · Tests · Avg · Date Added · PIN · Edit/Remove
   const rows = staff.map((s,i) => {
     const name = (s.first_name+' '+s.last_name).trim();
-    const a = agg[name] || { tests:0, sum:0, mastered:new Set() };
-    const avg = a.tests ? Math.round(a.sum/a.tests)+'%' : '-';
-    const mastered = a.mastered ? a.mastered.size : 0;
     const editing = (i === teamEditIdx);
+    const cur = staffRoles(s).map(r => r.toLowerCase());
+    const jobChoices = TEAM_JOBS.concat(isAdmin() ? ['Manager'] : []);
     const roleCell = editing
-      ? `<select id="team_role_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-xs text-text mt-1">${['Busser','Runner','Server','Bartender','Manager'].map(rr=>`<option ${String(s.role).toLowerCase()===rr.toLowerCase()?'selected':''}>${rr}</option>`).join('')}</select>
-         <label class="block text-xs text-muted mt-1"><input type="checkbox" id="team_tr_${i}" ${s.trainer?'checked':''}/> Trainer</label>
-         <label class="block text-xs text-muted"><input type="checkbox" id="team_sl_${i}" ${s.shift_lead?'checked':''}/> Shift Lead</label>
-         <label class="block text-xs text-muted mt-1">Training for:
-           <select id="team_tf_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-xs text-text">${['','Busser','Runner','Server','Bartender'].map(p=>`<option value="${p}" ${String(s.training_for||'')===p?'selected':''}>${p||'Not in training'}</option>`).join('')}</select>
-         </label>`
-      : `<span class="text-xs text-muted">${esc(s.role||'')}${s.trainer?' · 🎓 Trainer':''}${s.shift_lead?' · ⭐ Shift Lead':''}${s.training_for?` · 📘 Training: ${esc(s.training_for)}`:''}</span>`;
+      ? `<div class="mt-1">
+           <div class="flex flex-wrap gap-x-3 gap-y-1">${jobChoices.map(j =>
+             `<label class="text-xs text-muted"><input type="checkbox" class="teamJob_${i}" value="${j}" ${cur.indexOf(j.toLowerCase())!==-1?'checked':''}/> ${j}</label>`).join('')}
+           </div>
+           <div class="flex items-start justify-between gap-4 mt-2">
+             <div>
+               <label class="block text-xs text-muted"><input type="checkbox" id="team_tr_${i}" ${s.trainer?'checked':''}/> Trainer</label>
+               <label class="block text-xs text-muted mt-1"><input type="checkbox" id="team_sl_${i}" ${s.shift_lead?'checked':''}/> Shift Lead</label>
+             </div>
+             <label class="block text-xs text-muted text-right">Training for:<br>
+               <select id="team_tf_${i}" class="bg-bg border border-line rounded px-1.5 py-1 text-xs text-text mt-1">${['','Busser','Runner','Server','Bartender'].map(p=>`<option value="${p}" ${String(s.training_for||'')===p?'selected':''}>${p||'Not in training'}</option>`).join('')}</select>
+             </label>
+           </div>
+         </div>`
+      : `<span class="text-xs text-muted">${esc(staffRoles(s).join(', ')||'')}${s.trainer?' · 🎓 Trainer':''}${s.shift_lead?' · ⭐ Shift Lead':''}${s.training_for?` · 📘 Training: ${esc(s.training_for)}${s.assigned_trainer?' with '+esc(s.assigned_trainer):''}`:''}</span>`;
     const pinCell = editing
       ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
       : `<span class="text-text tracking-widest">${esc(s.pin)}</span>`;
@@ -3439,14 +3478,244 @@ function drawTeam(d){
          <button onclick="teamRemove(${i})" class="text-xs border border-fail text-fail rounded px-3 py-1.5">Remove</button>`;
     return `<tr class="border-b border-line align-top">
       <td class="py-2 pr-3"><p class="text-sm text-text leading-tight">${esc(name)}</p>${roleCell}</td>
-      <td class="py-2 pr-3 text-text font-semibold">${mastered}</td>
-      <td class="py-2 pr-3 text-muted">${a.tests}</td>
-      <td class="py-2 pr-3 text-text">${avg}</td>
       <td class="py-2 pr-3 text-muted whitespace-nowrap">${fmtDate(s.date_added)}</td>
       <td class="py-2 pr-3">${pinCell}</td>
       <td class="py-2"><div class="flex gap-1.5 flex-wrap">${actions}</div></td>
     </tr>`;
-  }).join('') || `<tr><td colspan="7" class="py-3 text-muted text-sm">No team members yet.</td></tr>`;
+  }).join('') || `<tr><td colspan="4" class="py-3 text-muted text-sm">No team members yet.</td></tr>`;
+
+  // Trainer dropdown for the add form: people already flagged as trainers.
+  const trainerNames = staff.filter(s => s.trainer).map(s => (s.first_name+' '+s.last_name).trim());
+  const jobBoxes = TEAM_JOBS.concat(isAdmin() ? ['Manager'] : []).map(j =>
+    `<label class="text-xs text-text"><input type="checkbox" class="addJob" value="${j}" ${j==='Server'?'checked':''}/> ${j}</label>`).join(' ');
+
+  $('teamBody').innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-sm uppercase tracking-wider text-golddim">Team Members</h3>
+      <button onclick="teamShowAddPanel()" class="text-xs bg-gold text-bg rounded-lg px-3 py-2 font-semibold">+ Add Team Member</button>
+    </div>
+
+    <div id="teamAddPanel" class="hidden bg-surface border border-gold rounded-xl p-4 mb-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-2">Add Team Member</p>
+      <div class="grid grid-cols-2 gap-2">
+        <input id="add_first" placeholder="First name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
+        <input id="add_last" placeholder="Last name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
+      </div>
+      <p class="text-xs text-muted mt-2 mb-1">Position (pick every job they work):</p>
+      <div class="flex flex-wrap gap-x-4 gap-y-1">${jobBoxes}</div>
+      <div class="grid grid-cols-2 gap-2 mt-2">
+        <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
+        <select id="add_training_for" onchange="$('add_trainer_wrap').classList.toggle('hidden', !this.value)" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text">
+          ${['','Busser','Runner','Server','Bartender'].map(p=>`<option value="${p}">${p?('Training for '+p):'Not in training'}</option>`).join('')}
+        </select>
+      </div>
+      <div id="add_trainer_wrap" class="hidden mt-2">
+        ${trainerNames.length
+          ? `<select id="add_trainer" class="w-full bg-bg border border-line rounded px-3 py-2 text-sm text-text">
+              <option value="">Who is their trainer?</option>
+              ${trainerNames.map(n=>`<option>${esc(n)}</option>`).join('')}
+            </select>`
+          : `<p class="text-xs text-muted">No one is flagged as a Trainer yet. Add them without a trainer, then flag a trainer and edit.</p>`}
+      </div>
+      <p id="teamMsg" class="text-xs mt-2"></p>
+      <div class="flex gap-2 mt-2">
+        <button onclick="teamAddMember()" class="flex-1 bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Add</button>
+        <button onclick="teamHideAddPanel()" class="flex-1 border border-line text-muted py-2.5 rounded-lg text-sm">Cancel</button>
+      </div>
+    </div>
+
+    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+          <th class="pb-2 pr-3 font-medium">Name</th><th class="pb-2 pr-3 font-medium">Date Added</th><th class="pb-2 pr-3 font-medium">PIN</th><th class="pb-2 font-medium">Actions</th>
+        </tr></thead><tbody>${rows}</tbody>
+      </table>
+    </div>
+
+    <div class="flex items-center justify-between mb-2">
+      <h3 class="text-sm uppercase tracking-wider text-golddim">Duty Checklists</h3>
+      <button onclick="dutyEditNew()" class="text-xs border border-gold text-gold rounded-lg px-3 py-1.5">+ New checklist</button>
+    </div>
+    <p class="text-xs text-muted mb-2">Edit any list's tasks here. Changes reach everyone the next time they open Duties.</p>
+    <div id="dutyEditorBox">${dutyEditorHtml()}</div>`;
+}
+
+/* ---- Duty checklist editor (Team tab, managers) --------------------------- */
+let _dutyEdit = null;   // { list, tasks:[{task, days}] } while a list is open
+
+function dutyEditorHtml(){
+  if(!_dutyEdit){
+    const names = dutyListNames();
+    if(!names.length) return `<p class="text-muted text-sm">No checklists in the sheet yet.</p>`;
+    return `<div class="flex flex-wrap gap-2">${names.map(n =>
+      `<button onclick="dutyEditOpen('${esc(n).replace(/'/g,"\\'")}')" class="text-xs border border-line hover:border-gold text-text rounded-lg px-3 py-2 transition-colors">${esc(n)}</button>`).join('')}</div>`;
+  }
+  const d = _dutyEdit;
+  const rows = d.tasks.map((t,i) => `
+    <div class="flex items-start gap-2 mb-2">
+      <div class="flex flex-col gap-0.5 flex-shrink-0">
+        <button onclick="dutyEditMove(${i},-1)" aria-label="Move up" class="text-muted hover:text-gold text-xs leading-none px-1 ${i===0?'opacity-30 pointer-events-none':''}">▲</button>
+        <button onclick="dutyEditMove(${i},1)" aria-label="Move down" class="text-muted hover:text-gold text-xs leading-none px-1 ${i===d.tasks.length-1?'opacity-30 pointer-events-none':''}">▼</button>
+      </div>
+      <input value="${esc(t.task)}" oninput="_dutyEdit.tasks[${i}].task=this.value"
+        class="flex-1 bg-bg border border-line rounded px-2 py-1.5 text-sm text-text min-w-0" />
+      <input value="${esc(t.days)}" oninput="_dutyEdit.tasks[${i}].days=this.value" placeholder="Days" title="Blank = every day. Otherwise like Wed|Sat"
+        class="w-20 bg-bg border border-line rounded px-2 py-1.5 text-xs text-text flex-shrink-0" />
+      <button onclick="dutyEditRemove(${i})" aria-label="Delete task" class="text-fail text-base leading-none px-1.5 py-1 flex-shrink-0">×</button>
+    </div>`).join('');
+  return `
+    <div class="bg-surface border border-gold rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <p class="text-sm text-gold font-semibold">${esc(d.list)}</p>
+        <button onclick="_dutyEdit=null;dutyEditorRedraw()" class="text-xs text-muted">← All checklists</button>
+      </div>
+      <p class="text-xs text-muted mb-3">Days column: leave blank for every day, or write days like Wed|Sat.</p>
+      ${rows || '<p class="text-muted text-sm mb-2">No tasks yet. Add the first one.</p>'}
+      <button onclick="dutyEditAdd()" class="w-full border border-line text-gold text-sm py-2 rounded-lg mb-2">+ Add task</button>
+      <div class="flex gap-2">
+        <button onclick="dutyEditSave()" class="flex-1 bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Save checklist</button>
+        <button onclick="dutyEditDelete()" class="border border-fail text-fail text-sm px-4 rounded-lg">Delete list</button>
+      </div>
+    </div>`;
+}
+function dutyEditorRedraw(){ const box = $('dutyEditorBox'); if(box) box.innerHTML = dutyEditorHtml(); }
+function dutyEditOpen(list){
+  _dutyEdit = {
+    list,
+    tasks: (S.dutyLists || []).filter(r => r.list === list).sort((a,b) => a.order - b.order)
+      .map(r => ({ task: r.task, days: Array.isArray(r.days) ? r.days.join('|') : String(r.days||'') }))
+  };
+  dutyEditorRedraw();
+}
+async function dutyEditNew(){
+  const name = await appPrompt({ title:'New checklist', message:'Name it the way the team will read it, like "Runner Opening".', placeholder:'Checklist name', confirmLabel:'Create' });
+  if(!name) return;
+  if(dutyListNames().some(n => n.toLowerCase() === name.toLowerCase())){ toast('That checklist already exists.', 'error'); return; }
+  _dutyEdit = { list: name, tasks: [] };
+  dutyEditorRedraw();
+}
+function dutyEditAdd(){ _dutyEdit.tasks.push({ task:'', days:'' }); dutyEditorRedraw(); }
+function dutyEditRemove(i){ _dutyEdit.tasks.splice(i,1); dutyEditorRedraw(); }
+function dutyEditMove(i,dir){
+  const t = _dutyEdit.tasks, j = i + dir;
+  if(j < 0 || j >= t.length) return;
+  [t[i], t[j]] = [t[j], t[i]];
+  dutyEditorRedraw();
+}
+async function dutyEditSave(){
+  const d = _dutyEdit;
+  const tasks = d.tasks.map(t => ({ task: String(t.task||'').trim(), days: String(t.days||'').trim() })).filter(t => t.task);
+  if(!tasks.length){ toast('Add at least one task, or use Delete list.', 'error'); return; }
+  showLoader('Saving checklist…');
+  try {
+    const r = await apiSend({ action:'saveDutyList', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
+      list: d.list, tasks: tasks.map((t,i) => ({ order:i+1, task:t.task, days:t.days })) });
+    hideLoader();
+    if(!r.ok){ appAlert(r.error || 'Could not save.', 'Save failed'); return; }
+    // Update local copy so the Duties tab reflects it without a re-login.
+    S.dutyLists = (S.dutyLists || []).filter(x => x.list !== d.list)
+      .concat(tasks.map((t,i) => ({ list:d.list, order:i+1, task:t.task, days: t.days ? t.days.split('|').map(s=>s.trim()).filter(Boolean) : [] })));
+    _dutyEdit = null;
+    dutyEditorRedraw();
+    toast('Checklist saved.');
+  } catch(e){ hideLoader(); appAlert('Connection error. Nothing was changed. Try again.', 'Save failed'); }
+}
+async function dutyEditDelete(){
+  const d = _dutyEdit;
+  const yes = await appConfirm({ title:'Delete "' + d.list + '"?', message:'The whole checklist disappears for everyone. Past runs of it stay in the log.',
+    confirmLabel:'Delete it', cancelLabel:'Keep it' });
+  if(!yes) return;
+  showLoader('Deleting checklist…');
+  try {
+    const r = await apiSend({ action:'saveDutyList', first:S.user.first_name, last:S.user.last_name, pin:S.pin, list:d.list, tasks:[] });
+    hideLoader();
+    if(!r.ok){ appAlert(r.error || 'Could not delete.', 'Delete failed'); return; }
+    S.dutyLists = (S.dutyLists || []).filter(x => x.list !== d.list);
+    _dutyEdit = null;
+    dutyEditorRedraw();
+    toast('Checklist deleted.');
+  } catch(e){ hideLoader(); appAlert('Connection error. Nothing was changed. Try again.', 'Delete failed'); }
+}
+
+/* ---- Team Progress: the manager's Progress view --------------------------- */
+const TEAM_DATA_CACHE_KEY = 'bonsake_teamcache';
+function teamDataCacheLoad(){ try { return JSON.parse(localStorage.getItem(TEAM_DATA_CACHE_KEY) || 'null'); } catch(e){ return null; } }
+function teamDataCacheSave(d){ try { localStorage.setItem(TEAM_DATA_CACHE_KEY, JSON.stringify(stripPins(d))); } catch(e){ reportError('team-cache', e); } }
+
+async function renderTeamProgress(){
+  const pane = $('tab-progress');
+  pane.innerHTML = `
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-display text-2xl text-text">Team Progress</h2>
+      <button onclick="progressView='me';renderProgress()" class="text-xs text-muted border border-line rounded-lg px-3 py-2">My own progress</button>
+    </div>
+    <div id="teamProgressBody"><p class="text-muted text-sm">Loading team progress…</p></div>`;
+  const cached = teamDataCacheLoad();
+  if(cached){ S.managerData = cached; drawTeamProgress(cached); }
+  try {
+    const r = await apiPost({ action:'managerData', first:S.user.first_name, last:S.user.last_name, pin:S.pin });
+    if(!r.ok){ if(!cached) $('teamProgressBody').innerHTML = `<p class="text-fail text-sm">${esc(r.error||'Could not load team data.')}</p>`; return; }
+    S.managerData = r;
+    teamDataCacheSave(r);
+    drawTeamProgress(r);
+  } catch(e){
+    if(!cached) $('teamProgressBody').innerHTML = `<p class="text-fail text-sm">Couldn't load team progress. Check your connection.</p>`;
+  }
+}
+
+function drawTeamProgress(d){
+  const box = $('teamProgressBody'); if(!box) return;
+  const staff = d.staff||[], results = d.results||[], abandoned = d.abandoned||[], tastings = d.tastings||[];
+  const rooms = floorRooms();
+  const sectionOf = {};
+  S.menu.forEach(it => { sectionOf[String(it.item_id)] = it.section; });
+  const activeGates = (S.gates||[]).filter(g => g.active);
+
+  // Per-person rollup from raw results: mastery, rooms passed, gate status.
+  const agg = {};
+  results.forEach(x => {
+    const name = (x.first_name+' '+x.last_name).trim();
+    if(!agg[name]) agg[name] = { tests:0, sum:0, mastered:new Set(), rooms:new Set() };
+    agg[name].tests++; agg[name].sum += Number(x.score_percent||0);
+    const passed = String(x.pass_fail).toUpperCase()==='PASS';
+    if(String(x.test_type||'')==='dish' && Number(x.test_level)===2 && passed && x.item_id)
+      agg[name].mastered.add(String(x.item_id));
+    if(String(x.test_type||'')==='tables' && passed && x.item_id)
+      agg[name].rooms.add(String(x.item_id));
+  });
+  const gatesMet = mastered => activeGates.length && activeGates.every(g => {
+    let n = 0;
+    mastered.forEach(id => { if(g.categories.indexOf(sectionOf[id]) !== -1) n++; });
+    return n >= g.required;
+  });
+
+  const memberRows = staff.map(s => {
+    const name = (s.first_name+' '+s.last_name).trim();
+    const a = agg[name] || { tests:0, sum:0, mastered:new Set(), rooms:new Set() };
+    const avg = a.tests ? Math.round(a.sum/a.tests)+'%' : '-';
+    const runFood = rooms.length && rooms.every(r => a.rooms.has(r));
+    const serve = gatesMet(a.mastered);
+    const chips = [
+      runFood ? `<span class="text-xs text-pass border border-pass/50 rounded px-1.5 py-0.5">Runs food ✓</span>` : '',
+      serve ? `<span class="text-xs text-pass border border-pass/50 rounded px-1.5 py-0.5">Serve ready ✓</span>` : '',
+      s.training_for ? `<span class="text-xs text-gold border border-golddim rounded px-1.5 py-0.5">Training: ${esc(s.training_for)}</span>` : ''
+    ].filter(Boolean).join(' ');
+    return { name, roles: staffRoles(s).join(', '), mastered: a.mastered.size, tests: a.tests, avg, rooms: a.rooms.size, chips };
+  }).sort((x,y) => y.mastered - x.mastered);
+
+  const masteryRows = memberRows.map(m => `
+    <div class="py-2.5 border-b border-line last:border-0">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-sm text-text">${esc(m.name)} <span class="text-xs text-muted">· ${esc(m.roles)}</span></p>
+          <div class="mt-1 flex flex-wrap gap-1">${m.chips}</div>
+        </div>
+        <div class="text-right flex-shrink-0">
+          <p class="text-sm text-text font-semibold">${m.mastered} <span class="text-xs text-muted font-normal">dishes</span></p>
+          <p class="text-xs text-muted">${m.tests} tests · ${m.avg} avg · ${m.rooms}/${rooms.length || 0} rooms</p>
+        </div>
+      </div>
+    </div>`).join('') || `<p class="text-muted text-sm">No team members yet.</p>`;
 
   // Tasting tracker: mastered dishes each member is waiting to taste vs. has tasted.
   const dishName = id => { const it = S.menu.find(x => String(x.item_id)===String(id)); return it ? it.item_name : id; };
@@ -3464,14 +3733,7 @@ function drawTeam(d){
   const tastedRows = tasted.map(w => `<div class="py-1.5 border-b border-line last:border-0">
       <p class="text-sm text-text">${esc(dishName(w.id))} <span class="text-xs text-muted">· tasted by ${esc(w.names.join(', '))}</span></p>
     </div>`).join('') || `<p class="text-muted text-sm">No tastings recorded yet.</p>`;
-  const tastingHtml = `
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Pre-Shift Tasting List</h3>
-    <p class="text-xs text-muted mb-2">Team members who mastered a dish but haven't tasted it yet: good candidates for the chef's pre-shift lineup.</p>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${waitRows}</div>
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Tasted</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${tastedRows}</div>`;
 
-  // Training activity: latest close-outs and sign-offs, newest first.
   const tlog = (d.trainingLog || []).slice(-8).reverse();
   const soffs = (d.signoffs || []).slice(-8).reverse();
   const tlogRows = tlog.map(x => `<div class="py-2 border-b border-line last:border-0">
@@ -3482,73 +3744,54 @@ function drawTeam(d){
       <p class="text-sm text-text">${esc((x.trainee_first+' '+x.trainee_last).trim())} <span class="text-muted text-xs">signed off by ${esc((x.trainer_first+' '+x.trainer_last).trim())} · Week ${x.week}, Day ${x.day} · ${fmtDate(x.date)}</span></p>
       ${x.notes ? `<p class="text-xs text-muted mt-0.5">${esc(x.notes)}</p>` : ''}
     </div>`).join('') || `<p class="text-muted text-sm">No sign-offs yet.</p>`;
-  const trainingHtml = `
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Training Close-Outs</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${tlogRows}</div>
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Trainer Sign-Offs</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6">${soffRows}</div>`;
 
   const abRows = abandoned.slice()
-    .sort((x,y)=> new Date(y.timestamp_abandoned)-new Date(x.timestamp_abandoned))
-    .map(x => `<tr class="border-b border-line">
-      <td class="py-2 pr-2 text-text">${esc((x.first_name+' '+x.last_name).trim())}</td>
-      <td class="py-2 pr-2 text-muted">${esc(x.test_section)}${x.test_level?(' · L'+x.test_level):''}</td>
-      <td class="py-2 pr-2 text-muted">${x.questions_completed}/${x.total_questions}</td>
-      <td class="py-2 text-muted whitespace-nowrap">${fmtDate(x.timestamp_abandoned)}</td>
-    </tr>`).join('') || `<tr><td colspan="4" class="py-3 text-muted text-sm">No abandoned tests. 👍</td></tr>`;
+    .sort((x,y)=> new Date(y.timestamp_abandoned)-new Date(x.timestamp_abandoned)).slice(0, 25)
+    .map(x => `<div class="py-2 border-b border-line last:border-0">
+      <p class="text-sm text-text">${esc((x.first_name+' '+x.last_name).trim())} <span class="text-xs text-muted">· ${esc(x.test_section)}${x.test_level?(' · L'+x.test_level):''} · ${x.questions_completed}/${x.total_questions} · ${fmtDate(x.timestamp_abandoned)}</span></p>
+    </div>`).join('') || `<p class="text-muted text-sm">No abandoned tests. 👍</p>`;
 
-  $('teamBody').innerHTML = `
-    <div class="flex items-center justify-between mb-3">
-      <h3 class="text-sm uppercase tracking-wider text-golddim">Team Members</h3>
-      <button onclick="teamShowAddPanel()" class="text-xs bg-gold text-bg rounded-lg px-3 py-2 font-semibold">+ Add Team Member</button>
-    </div>
+  // Admin-only setting: whether managers compete on the dish leaderboard.
+  const adminHtml = isAdmin() ? `
+    <div class="bg-surface border border-gold/50 rounded-xl px-4 py-3 mb-3 flex items-center justify-between gap-3">
+      <div><p class="text-sm text-text">Managers on the leaderboard</p>
+      <p class="text-xs text-muted">Admin only. Managers always see the board either way.</p></div>
+      <label class="text-xs text-text flex-shrink-0"><input type="checkbox" id="admLb" ${cfgNum('managers_on_leaderboard',1)?'checked':''} onchange="adminToggleLb(this.checked)"/> Show</label>
+    </div>` : '';
 
-    <div id="teamAddPanel" class="hidden bg-surface border border-gold rounded-xl p-4 mb-4">
-      <p class="text-xs uppercase tracking-wider text-golddim mb-2">Add Team Member</p>
-      <div class="grid grid-cols-2 gap-2">
-        <input id="add_first" placeholder="First name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
-        <input id="add_last" placeholder="Last name" autocomplete="off" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text placeholder-muted" />
-        <select id="add_role" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text">
-          <option>Busser</option><option>Runner</option><option selected>Server</option><option>Bartender</option><option>Manager</option>
-        </select>
-        <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
-      </div>
-      <p id="teamMsg" class="text-xs mt-2"></p>
-      <div class="flex gap-2 mt-2">
-        <button onclick="teamAddMember()" class="flex-1 bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Add</button>
-        <button onclick="teamHideAddPanel()" class="flex-1 border border-line text-muted py-2.5 rounded-lg text-sm">Cancel</button>
-      </div>
-    </div>
+  box.innerHTML = `
+    <button onclick="toggleLeaderboard()" class="w-full flex items-center justify-between bg-surface border border-gold/60 rounded-xl px-4 py-3 mb-3 hover:border-gold transition-colors">
+      <span class="text-sm text-gold font-semibold">🏆 Leaderboard</span>
+      <span class="text-xs text-muted">See the rankings →</span>
+    </button>
+    ${adminHtml}
+    ${accBox('Team Mastery', staff.length + ' member' + (staff.length===1?'':'s'), masteryRows, true)}
+    ${accBox('Training Close-Outs', String(tlog.length || ''), tlogRows, false)}
+    ${accBox('Trainer Sign-Offs', String(soffs.length || ''), soffRows, false)}
+    ${accBox('Pre-Shift Tasting List', waiting.length ? waiting.length + ' waiting' : '', `
+      <p class="text-xs text-muted mb-2">Mastered a dish but haven't tasted it: candidates for the chef's pre-shift lineup.</p>
+      ${waitRows}
+      <p class="text-xs uppercase tracking-wider text-golddim mt-4 mb-1">Tasted</p>
+      ${tastedRows}`, false)}
+    ${accBox('Left-Early Tests', String(abandoned.length || ''), abRows, false)}`;
+}
 
-    <div class="bg-surface border border-line rounded-xl p-4 mb-6 overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-3 font-medium">Name</th><th class="pb-2 pr-3 font-medium">Mastered</th><th class="pb-2 pr-3 font-medium">Tests</th><th class="pb-2 pr-3 font-medium">Avg</th><th class="pb-2 pr-3 font-medium">Date Added</th><th class="pb-2 pr-3 font-medium">PIN</th><th class="pb-2 font-medium">Actions</th>
-        </tr></thead><tbody>${rows}</tbody>
-      </table>
-    </div>
-
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Tonight's Duties</h3>
-    <div id="dutyRunsBody" class="bg-surface border border-line rounded-xl p-4 mb-6"><p class="text-muted text-sm">Loading…</p></div>
-
-    ${trainingHtml}
-
-    ${tastingHtml}
-
-    <h3 class="text-sm uppercase tracking-wider text-golddim mb-2">Abandoned Tests</h3>
-    <div class="bg-surface border border-line rounded-xl p-4 overflow-x-auto">
-      <table class="w-full text-sm text-left">
-        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Test</th><th class="pb-2 pr-2 font-medium">Done</th><th class="pb-2 font-medium">When</th>
-        </tr></thead><tbody>${abRows}</tbody>
-      </table>
-    </div>`;
-  loadDutyRuns();   // fills #dutyRunsBody once the panel exists
+async function adminToggleLb(on){
+  try {
+    const r = await apiSend({ action:'setConfig', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
+      key:'managers_on_leaderboard', value: on ? 1 : 0 });
+    if(!r.ok){ appAlert(r.error || 'Could not save the setting.', 'Not saved'); return; }
+    S.config.managers_on_leaderboard = on ? 1 : 0;
+    toast(on ? 'Managers now show on the leaderboard.' : 'Managers are now hidden from the leaderboard.');
+  } catch(e){
+    appAlert('Connection error. The setting was not changed.', 'Not saved');
+    const cb = $('admLb'); if(cb) cb.checked = !on;
+  }
 }
 
 /* ---- Tonight's duty runs (manager view, with Verify) --------------------- */
 function canVerifyDuties(){
-  return !!(S.user && (S.user.shift_lead || String(S.user.role||'').toLowerCase() === 'manager'));
+  return !!(S.user && (S.user.shift_lead || isManager()));
 }
 function fmtDur(sec){
   sec = Number(sec||0); if(!sec) return '';
@@ -3625,19 +3868,26 @@ function teamMsg(msg, ok){
   const el = $('teamMsg'); if(!el) return;
   el.textContent = msg; el.className = 'text-xs mt-2 ' + (ok?'text-pass':'text-fail');
 }
-function teamShowAddPanel(){ teamEditIdx = -1; drawTeam(S.managerData); const p = $('teamAddPanel'); if(p) p.classList.remove('hidden'); }
+function teamShowAddPanel(){ teamEditIdx = -1; drawTeam(S.staffData); const p = $('teamAddPanel'); if(p) p.classList.remove('hidden'); }
 function teamHideAddPanel(){ const p = $('teamAddPanel'); if(p) p.classList.add('hidden'); }
-function teamEdit(i){ teamEditIdx = i; drawTeam(S.managerData); }
-function teamCancel(){ teamEditIdx = -1; drawTeam(S.managerData); }
+function teamEdit(i){ teamEditIdx = i; drawTeam(S.staffData); }
+function teamCancel(){ teamEditIdx = -1; drawTeam(S.staffData); }
 
 async function teamAddMember(){
-  const first=$('add_first').value.trim(), last=$('add_last').value.trim(), role=$('add_role').value, pin=$('add_pin').value.trim();
+  const first=$('add_first').value.trim(), last=$('add_last').value.trim(), pin=$('add_pin').value.trim();
+  const jobs = [...document.querySelectorAll('.addJob:checked')].map(b => b.value);
+  const trainingFor = $('add_training_for') ? $('add_training_for').value : '';
+  const trainerSel = $('add_trainer');
+  const trainerName = trainingFor && trainerSel ? trainerSel.value : '';
   if(!first||!last||!pin) return teamMsg('First name, last name, and PIN are required.', false);
   if(!/^\d{4}$/.test(pin)) return teamMsg('PIN must be exactly 4 digits.', false);
+  if(!jobs.length) return teamMsg('Pick at least one position.', false);
+  if(trainingFor && trainerSel && !trainerName) return teamMsg('Pick who will train them.', false);
   showLoader('Adding team member…');
   try {
     const r = await apiPost({ action:'addStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
-      new_first:first, new_last:last, new_role:role, new_pin:pin });
+      new_first:first, new_last:last, new_role:jobs.join(', '), new_pin:pin,
+      new_training_for:trainingFor, new_assigned_trainer:trainerName });
     hideLoader();
     if(!r.ok) return teamMsg(r.error||'Could not add team member.', false);
     renderTeam();
@@ -3645,14 +3895,16 @@ async function teamAddMember(){
 }
 
 async function teamSave(i){
-  const s = (S.managerData.staff||[])[i]; if(!s) return;
-  const role = $('team_role_'+i).value, pin = $('team_pin_'+i).value.trim();
+  const s = ((S.staffData && S.staffData.staff)||[])[i]; if(!s) return;
+  const jobs = [...document.querySelectorAll('.teamJob_'+i+':checked')].map(b => b.value);
+  const pin = $('team_pin_'+i).value.trim();
+  if(!jobs.length){ appAlert('Pick at least one position.', 'Check the jobs'); return; }
   if(pin && !/^\d{4}$/.test(pin)){ appAlert('PIN must be exactly 4 digits.', 'Check the PIN'); return; }
   showLoader('Saving…');
   try {
     const tr = $('team_tr_'+i), sl = $('team_sl_'+i), tf = $('team_tf_'+i);
     const r = await apiPost({ action:'updateStaff', first:S.user.first_name, last:S.user.last_name, pin:S.pin,
-      target_first:s.first_name, target_last:s.last_name, new_role:role, new_pin:pin,
+      target_first:s.first_name, target_last:s.last_name, new_role:jobs.join(', '), new_pin:pin,
       new_trainer: tr ? !!tr.checked : undefined,
       new_shift_lead: sl ? !!sl.checked : undefined,
       new_training_for: tf ? tf.value : undefined });
@@ -3663,7 +3915,7 @@ async function teamSave(i){
 }
 
 async function teamRemove(i){
-  const s = (S.managerData.staff||[])[i]; if(!s) return;
+  const s = ((S.staffData && S.staffData.staff)||[])[i]; if(!s) return;
   const name = (s.first_name+' '+s.last_name).trim();
   const yes = await appConfirm({ title:'Remove '+name+'?', message:'This deletes their login. Their past test results stay in the sheet.',
     confirmLabel:'Remove them', cancelLabel:'Keep them' });

@@ -50,7 +50,9 @@ const mustExist = [
   'flashcards','upsells','buildStudyListHtml','studySearch',
   'canonicalizeMenu','titleIngredient','matchRecall','esc','shuffle',
   'accBox','renderDutySplit','renderDutyTeamPicker','renderDutySection',
-  'dutyBegin','dutyCounts','dutyToggle','listRoomHint','tableRoomOf'
+  'dutyBegin','dutyCounts','dutyToggle','listRoomHint','tableRoomOf',
+  'isAdmin','userRoles','renderTeamProgress','drawTeamProgress','dutyEditorHtml',
+  'dutyEditOpen','dutyEditSave','teamCacheLoad','adminToggleLb'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

@@ -48,7 +48,9 @@ const mustExist = [
   'appConfirm','appAlert','appPrompt',
   'applyMenuPayload','menuCacheLoad','menuCacheSave','tryOfflineLogin',
   'flashcards','upsells','buildStudyListHtml','studySearch',
-  'canonicalizeMenu','titleIngredient','matchRecall','esc','shuffle'
+  'canonicalizeMenu','titleIngredient','matchRecall','esc','shuffle',
+  'accBox','renderDutySplit','renderDutyTeamPicker','renderDutySection',
+  'dutyBegin','dutyCounts','dutyToggle','listRoomHint','tableRoomOf'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

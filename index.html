@@ -154,7 +154,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v11</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v12</p>
   </div>
 </section>
 
@@ -253,7 +253,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 11;           // shown on the login screen; bump with each release
+const APP_VERSION = 12;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -392,14 +392,17 @@ const SECTIONS = [
 ];
 
 // ---- Test tracks (Service Skills; dish tests come from the menu itself) ----
+// Description Recall was retired 2026-08-12: dish descriptions join the
+// regular dish tests when the chef's descriptions land in sell_description.
 const TRACKS = [
   { id:'tm_know',     name:'Menu Terms',           type:'know',        levels:false },
   { id:'tm_allergen', name:'Allergen Awareness',   type:'allergen',    levels:false, pass:PASS_ALLERGEN },
-  { id:'tm_desc',     name:'Description Recall',   type:'description', levels:false },
   { id:'tm_upsell',   name:'Upsell Test',          type:'upsell',      levels:false },
   { id:'tm_beers',    name:'Beer & Seltzer List',  type:'beers',       levels:false },
   { id:'tm_bar',      name:'🍹 Bartending Basics', type:'soon' }
 ];
+// Drink sections live in their own Test dropdown, away from the food.
+const BEV_SECTIONS = ['Signature Cocktails','Mocktails','Beers & Seltzers'];
 
 // Beers we do NOT serve, mixed into the Beer & Seltzer List test as decoys.
 const BEER_DECOYS = ['Corona Extra','Modelo Especial','Heineken','Blue Moon','Stella Artois','Guinness','Dos Equis','White Claw','Truly','Yuengling'];
@@ -458,6 +461,18 @@ function titleCap(s){ return s.replace(/\b\w/g, c => c.toUpperCase()); }
 function fmtPrice(p){ return (p==='' || p==null) ? '' : '$' + Number(p).toFixed(2); }
 function fmtDate(iso){ if(!iso) return '-'; const d = new Date(iso); if(isNaN(d)) return '-'; return d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
 function userKey(){ return ('bonsake_stats_' + (S.user?S.user.first_name:'') + '_' + (S.user?S.user.last_name:'')).toLowerCase(); }
+// Collapsible section card (used by the Progress and Test screens).
+function accBox(title, note, inner, open, toggleAttr){
+  return `
+    <details class="acc bg-surface border border-line rounded-xl mb-3" ${open?'open':''} ${toggleAttr||''}>
+      <summary class="flex items-center justify-between px-4 py-3">
+        <span class="min-w-0"><span class="text-sm uppercase tracking-wider text-golddim">${title}</span>
+        ${note?`<span class="text-xs text-muted ml-2">${note}</span>`:''}</span>
+        <span class="acc-chev text-gold ml-3" aria-hidden="true">›</span>
+      </summary>
+      <div class="px-4 pb-4">${inner}</div>
+    </details>`;
+}
 
 /* ===========================================================================
    API CALLS
@@ -702,6 +717,7 @@ async function doLogin(first, last, pin){
   S.pin = pin;
   S.results = r.results || [];
   S.dishNotes = r.dishNotes || {};   // this user's tasting notes, keyed by item_id
+  S.roster = r.roster || [];         // staff names for the split-checklist picker
   S.offlineMode = false;
   // Load the menu if we don't have it yet
   if(S.menu.length === 0){
@@ -771,7 +787,7 @@ function userCacheKey(first, last){ return 'bonsake_usercache_' + (first + '_' +
 function userCacheSave(first, last, pin){
   try {
     localStorage.setItem(userCacheKey(first, last),
-      JSON.stringify({ pin, user:S.user, results:S.results, dishNotes:S.dishNotes }));
+      JSON.stringify({ pin, user:S.user, results:S.results, dishNotes:S.dishNotes, roster:S.roster }));
   } catch(e){ reportError('user-cache', e); }
 }
 function tryOfflineLogin(first, last, pin){
@@ -783,6 +799,7 @@ function tryOfflineLogin(first, last, pin){
   S.pin = pin;
   S.results = u.results || [];
   S.dishNotes = u.dishNotes || {};
+  S.roster = u.roster || [];
   S.offlineMode = true;
   applyMenuPayload(cached.payload);
   saveSession(first, last, pin);
@@ -892,7 +909,8 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   S.dishNotes = {}; S.testBrowse = { section:null }; S.floorBrowse = { room:null };
-  S.training = { week:null, day:null }; S.duty = null; _dutyJob = null;
+  S.training = { week:null, day:null }; S.duty = null;
+  _dutyJob = null; _dutyLists = []; _dutyParticipants = []; _dutySel = { rooms:[], tables:[] };
   clearTimeout(_idleTimer);
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
@@ -1556,6 +1574,12 @@ function dutyCase(s){
   return String(s || '').split(' ').map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : w).join(' ');
 }
 let _dutyJob = null;
+let _dutyLists = [];         // checklist names picked this run (multi-select)
+let _dutyParticipants = [];  // teammates splitting the run ([] = working alone)
+let _dutySel = { rooms:[], tables:[] };   // where they worked: whole rooms and/or tables
+
+// Distinct colors for split-run participants (index 0 = the signed-in user).
+const DUTY_COLORS = ['#C9A84C','#4EA8DE','#B07CD8','#E07A5F','#5FB49C','#E5989B'];
 
 function renderDuties(){
   const pane = $('tab-duties');
@@ -1580,34 +1604,102 @@ function renderDuties(){
       <div class="grid grid-cols-2 gap-3">${cards}</div>`;
     return;
   }
-  // Screen 2: that job's checklists.
+  // Screen 2: that job's checklists. Tap one or several (a server opening two
+  // rooms picks both), then Continue.
   const jobLists = names.filter(nm => dutyJobFor(nm) === _dutyJob);
   const cards = jobLists.map(n => {
     const count = dutyTasksFor(n).length;
-    return `<button onclick="dutyPickList('${esc(n).replace(/'/g,"\\'")}')" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
-      <p class="text-text font-medium text-base leading-snug">${esc(n)}</p>
+    const on = _dutyLists.indexOf(n) !== -1;
+    return `<button onclick="dutyToggleList('${esc(n).replace(/'/g,"\\'")}')"
+      class="rounded-xl p-5 text-left transition-colors border ${on?'border-gold bg-gold/10':'border-line bg-surface hover:border-gold'}">
+      <p class="text-text font-medium text-base leading-snug">${on?'✓ ':''}${esc(n)}</p>
       <p class="text-muted text-xs mt-1.5">${count} task${count===1?'':'s'} today</p>
     </button>`;
   }).join('');
   pane.innerHTML = `
-    <button onclick="_dutyJob=null;renderDuties()" class="text-gold text-sm mb-3">&larr; Jobs</button>
+    <button onclick="_dutyJob=null;_dutyLists=[];renderDuties()" class="text-gold text-sm mb-3">&larr; Jobs</button>
     <h2 class="font-display text-2xl text-text mb-1">${esc(_dutyJob)} Duties</h2>
-    <p class="text-muted text-sm mb-4">${jobLists.length ? 'Pick your checklist.' : ''}</p>
-    ${jobLists.length ? `<div class="grid grid-cols-2 gap-3">${cards}</div>` : `<p class="text-muted text-sm">No ${esc(_dutyJob)} checklists yet. They'll appear here once they're added to the sheet.</p>`}`;
+    <p class="text-muted text-sm mb-4">${jobLists.length ? 'Tap every checklist you are doing, then continue.' : ''}</p>
+    ${jobLists.length ? `<div class="grid grid-cols-2 gap-3">${cards}</div>
+      <button onclick="dutyListsContinue()" class="mt-5 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${_dutyLists.length?'':'opacity-40 pointer-events-none'}">
+        Continue${_dutyLists.length>1 ? ' with ' + _dutyLists.length + ' checklists' : ''}</button>`
+      : `<p class="text-muted text-sm">No ${esc(_dutyJob)} checklists yet. They'll appear here once they're added to the sheet.</p>`}`;
 }
-function dutyPickJob(j){ _dutyJob = j; renderDuties(); }
-function dutyPickList(list){
-  if(_dutyJob === 'Server') renderDutyTables(list);
-  else dutyBegin(list, []);
+function dutyPickJob(j){ _dutyJob = j; _dutyLists = []; renderDuties(); }
+function dutyToggleList(name){
+  const at = _dutyLists.indexOf(name);
+  if(at === -1) _dutyLists.push(name); else _dutyLists.splice(at, 1);
+  renderDuties();
+}
+function dutyListsContinue(){
+  if(!_dutyLists.length) return;
+  _dutyParticipants = [];
+  renderDutySplit();
 }
 
-/* ---- Table picker: tap the tables that were in your section -------------- */
-let _dutyTables = [];
-function renderDutyTables(list){
-  _dutyTables = [];
+/* ---- Alone or splitting? On a shared device, teammates each get their own
+   checkbox column and color so everyone can see who did what. -------------- */
+function renderDutySplit(){
+  $('tab-duties').innerHTML = `
+    <button onclick="renderDuties()" class="text-gold text-sm mb-3">&larr; Checklists</button>
+    <div class="max-w-md mx-auto text-center mt-6 fade-in">
+      <p class="font-display text-2xl text-text">Alone, or splitting it?</p>
+      <p class="text-muted text-sm mt-2 leading-relaxed">If two or more of you are sharing ${_dutyLists.length>1?'these checklists':'this checklist'}, everyone gets their own checkbox and color, and your manager sees who did what.</p>
+      <button onclick="dutyAfterSplitChoice()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Just me</button>
+      <button onclick="renderDutyTeamPicker()" class="mt-2 w-full border border-gold text-gold font-semibold py-3 rounded-lg">Splitting with others</button>
+    </div>`;
+}
+function renderDutyTeamPicker(){
+  const self = (S.user.first_name + ' ' + S.user.last_name).trim();
+  const others = (S.roster || [])
+    .map(p => (p.first_name + ' ' + p.last_name).trim())
+    .filter(n => n && n.toLowerCase() !== self.toLowerCase())
+    .sort((a,b) => a.localeCompare(b));
+  if(!others.length){
+    appAlert('No other team members are available to pick. Log out and back in to refresh the list.', 'No teammates found');
+    return;
+  }
+  const chips = others.map(n => {
+    const on = _dutyParticipants.indexOf(n) !== -1;
+    return `<button onclick="dutyToggleMate('${esc(n).replace(/'/g,"\\'")}')"
+      class="rounded-full px-4 py-2 text-sm border transition-colors mr-2 mb-2 ${on?'border-gold bg-gold text-bg font-semibold':'border-line bg-surface text-text'}">${on?'✓ ':''}${esc(n)}</button>`;
+  }).join('');
+  $('tab-duties').innerHTML = `
+    <button onclick="renderDutySplit()" class="text-gold text-sm mb-3">&larr; Back</button>
+    <h2 class="font-display text-2xl text-text mb-1">Who's splitting it with you?</h2>
+    <p class="text-muted text-sm mb-4">Tap everyone sharing the work. You are already counted.</p>
+    <div>${chips}</div>
+    <button onclick="dutyAfterSplitChoice()" class="mt-5 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${_dutyParticipants.length?'':'opacity-40 pointer-events-none'}">
+      Continue${_dutyParticipants.length ? ' (' + (_dutyParticipants.length+1) + ' people)' : ''}</button>`;
+}
+function dutyToggleMate(name){
+  const at = _dutyParticipants.indexOf(name);
+  if(at === -1){
+    if(_dutyParticipants.length >= DUTY_COLORS.length - 1){
+      toast('Up to ' + DUTY_COLORS.length + ' people can split one checklist.', 'error');
+      return;
+    }
+    _dutyParticipants.push(name);
+  } else _dutyParticipants.splice(at, 1);
+  renderDutyTeamPicker();
+}
+function dutyAfterSplitChoice(){
+  // Servers and bartenders say where they worked (whole rooms on lunch
+  // shifts, tables by section on dinner shifts). Bussers and runners skip.
+  if(_dutyJob === 'Server' || _dutyJob === 'Bartender') renderDutySection();
+  else dutyBegin([]);
+}
+
+/* ---- Section picker: whole rooms, tables, or a mix ------------------------ */
+function renderDutySection(){
+  _dutySel = { rooms:[], tables:[] };
   const rooms = floorRooms();
   const maps = rooms.map(room => `
-    <p class="text-xs uppercase tracking-wider text-golddim mt-4 mb-1.5">${esc(room)}</p>
+    <div class="flex items-center justify-between mt-5 mb-1.5">
+      <p class="text-xs uppercase tracking-wider text-golddim">${esc(room)}</p>
+      <button data-dr="${esc(room)}" onclick="dutyToggleRoom(this)"
+        class="drRoom text-xs border border-line text-muted rounded-lg px-3 py-1.5 transition-colors">Whole room</button>
+    </div>
     <div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="aspect-ratio:4/5;max-width:420px;margin:0 auto;">
       ${roomTables(room).map(t => {
         if((t.kind || 'table') !== 'table') return markerTile(t);
@@ -1618,108 +1710,202 @@ function renderDutyTables(list){
       }).join('')}
     </div>`).join('');
   $('tab-duties').innerHTML = `
-    <button onclick="S.duty=null;renderDuties()" class="text-gold text-sm mb-3">&larr; Checklists</button>
-    <h2 class="font-display text-2xl text-text mb-1">${esc(list)}</h2>
-    <p class="text-muted text-sm mb-1">Tap the tables that were in your section tonight so your manager knows where to check.</p>
-    <p id="dtCount" class="text-xs text-gold mb-2">No tables selected</p>
+    <button onclick="renderDutySplit()" class="text-gold text-sm mb-3">&larr; Back</button>
+    <h2 class="font-display text-2xl text-text mb-1">Where are you working?</h2>
+    <p class="text-muted text-sm mb-1">Tap "Whole room" on lunch shifts, or tap the tables in your section, so your manager knows where to check.</p>
+    <p id="dtCount" class="text-xs text-gold mb-2">Nothing selected yet</p>
     ${maps}
-    <button id="dtStart" onclick="dutyBegin('${esc(list).replace(/'/g,"\\'")}', _dutyTables)"
+    <button id="dtStart" onclick="dutySectionContinue()"
       class="mt-5 w-full bg-gold text-bg font-semibold py-3 rounded-lg opacity-40 pointer-events-none">Start</button>`;
+}
+function dutyToggleRoom(btn){
+  const room = btn.dataset.dr;
+  const at = _dutySel.rooms.indexOf(room);
+  if(at === -1){ _dutySel.rooms.push(room); btn.classList.add('bg-gold','text-bg','border-gold','font-semibold'); btn.classList.remove('text-muted'); btn.textContent = '✓ Whole room'; }
+  else { _dutySel.rooms.splice(at,1); btn.classList.remove('bg-gold','text-bg','border-gold','font-semibold'); btn.classList.add('text-muted'); btn.textContent = 'Whole room'; }
+  dutySelUpdate();
 }
 function dutyToggleTable(btn){
   const id = btn.dataset.dt;
-  const at = _dutyTables.indexOf(id);
-  if(at === -1){ _dutyTables.push(id); btn.classList.add('bg-gold','text-bg'); btn.classList.remove('bg-chip','text-text'); }
-  else { _dutyTables.splice(at,1); btn.classList.remove('bg-gold','text-bg'); btn.classList.add('bg-chip','text-text'); }
+  const at = _dutySel.tables.indexOf(id);
+  if(at === -1){ _dutySel.tables.push(id); btn.classList.add('bg-gold','text-bg'); btn.classList.remove('bg-chip','text-text'); }
+  else { _dutySel.tables.splice(at,1); btn.classList.remove('bg-gold','text-bg'); btn.classList.add('bg-chip','text-text'); }
+  dutySelUpdate();
+}
+function dutySelUpdate(){
+  const bits = _dutySel.rooms.map(r => r + ' (whole room)').concat(_dutySel.tables);
   const c = $('dtCount');
-  if(c) c.textContent = _dutyTables.length ? ('Selected: ' + _dutyTables.join(', ')) : 'No tables selected';
+  if(c) c.textContent = bits.length ? ('Selected: ' + bits.join(', ')) : 'Nothing selected yet';
+  const any = bits.length > 0;
   const s = $('dtStart'); if(!s) return;
-  s.classList.toggle('opacity-40', !_dutyTables.length);
-  s.classList.toggle('pointer-events-none', !_dutyTables.length);
+  s.classList.toggle('opacity-40', !any);
+  s.classList.toggle('pointer-events-none', !any);
 }
 
-/* ---- The run: three tasks per card --------------------------------------- */
-function dutyBegin(list, tables){
-  const tasks = dutyTasksFor(list);
-  if(!tasks.length) return;
-  const cards = [];
-  for(let i = 0; i < tasks.length; i += 5) cards.push(tasks.slice(i, i+5));
+// Which room(s) a checklist belongs to, from its name. null = any room.
+function listRoomHint(list){
+  const l = String(list).toLowerCase();
+  if(l.indexOf('umi') !== -1) return ['Umi Room'];
+  if(l.indexOf('porch') !== -1) return ['Front Porch','Side Porch'];
+  if(l.indexOf('main') !== -1) return ['Main'];
+  return null;
+}
+function tableRoomOf(tableId){
+  const t = (S.layout || []).find(x => x.table === tableId && (x.kind||'table') === 'table');
+  return t ? t.room : null;
+}
+async function dutySectionContinue(){
+  // Flag a mismatch between the checklist and where they say they worked
+  // (e.g. the Umi Room list with Main tables picked). Warn, never block —
+  // covering for someone else's section is a real thing.
+  const selRooms = new Set(_dutySel.rooms);
+  _dutySel.tables.forEach(t => { const r = tableRoomOf(t); if(r) selRooms.add(r); });
+  for(const list of _dutyLists){
+    const hint = listRoomHint(list);
+    if(!hint || !selRooms.size) continue;
+    const overlap = hint.some(r => selRooms.has(r));
+    if(!overlap){
+      const yes = await appConfirm({
+        title: 'Different room than the checklist',
+        message: 'The "' + list + '" checklist is for the ' + hint.join(' or ') + ', but you picked ' + Array.from(selRooms).join(', ') + '. Keep going anyway?',
+        confirmLabel: 'Keep going', cancelLabel: 'Change my section' });
+      if(!yes) return;
+    }
+  }
+  dutyBegin(_dutySel.rooms.map(r => r + ' (whole room)').concat(_dutySel.tables));
+}
+
+/* ---- The run: every task on one card. Solo runs get one big checkbox per
+   task; split runs get one small box per person, and each completed task
+   glows the color of whoever did it. ---------------------------------------- */
+function dutyBegin(tables){
+  const self = (S.user.first_name + ' ' + S.user.last_name).trim();
+  const participants = [self].concat(_dutyParticipants);
+  const stamp = Date.now();
+  const runs = _dutyLists.map((list, i) => ({
+    runId: 'D' + stamp + Math.floor(Math.random()*1000) + '_' + i,
+    list, saved: false, queued: false
+  })).filter(r => dutyTasksFor(r.list).length);
+  if(!runs.length) return;
+  const tasks = [];
+  runs.forEach((r, ri) => dutyTasksFor(r.list).forEach(task => tasks.push({ run: ri, task, by: null })));
   S.duty = {
-    runId: 'D' + Date.now() + Math.floor(Math.random()*1000),
-    list, tables: (tables || []).slice(),
-    cards, idx: 0, done: cards.map(c => c.map(() => false)),
-    started: Date.now(), saved: false
+    runs, tasks, participants,
+    split: participants.length > 1,
+    tables: (tables || []).slice(),
+    started: Date.now()
   };
-  sendDutyStart();
+  runs.forEach(r => sendDutyStart(r));
   renderDutyRun();
 }
 // The duty-start write is the accountability system's anchor: if it never
 // lands, the manager never sees the run. So it retries, and if the wifi is
 // truly gone it waits in the outbox and sends itself later.
-async function sendDutyStart(){
+async function sendDutyStart(run){
   const d = S.duty;
   const payload = { action:'dutyStart', first:S.user.first_name, last:S.user.last_name,
-    run_id:d.runId, list:d.list, tables:d.tables.join(', ') };
+    run_id:run.runId, list:run.list, tables:d.tables.join(', '),
+    participants: d.split ? d.participants.join('; ') : '' };
   try {
     const r = await apiSend(payload);
-    if(r && r.ok){ d.saved = true; }
+    if(r && r.ok){ run.saved = true; }
     else {
       reportError('duty-start', new Error((r && r.error) || 'server refused'));
       toast('Your checklist start could not be recorded. Tell your manager you started it.', 'error');
     }
   } catch(e){
     outboxAdd(payload, 'duty start');
-    d.queued = true;
+    run.queued = true;
     if(S.duty === d) renderDutyRun();   // show the offline note on the running card
   }
 }
+function dutyCounts(){
+  const d = S.duty;
+  const per = d.participants.map(() => 0);
+  let done = 0;
+  d.tasks.forEach(t => { if(t.by !== null){ done++; per[t.by]++; } });
+  return { done, total: d.tasks.length, per };
+}
 function renderDutyRun(){
   const d = S.duty;
-  const card = d.cards[d.idx];
-  const total = d.cards.length;
-  const totalTasks = d.cards.reduce((n,c) => n + c.length, 0);
-  const doneTasks = d.done.reduce((n,c) => n + c.filter(Boolean).length, 0);
-  const allDone = doneTasks === totalTasks;
-  const pct = Math.round((doneTasks / totalTasks) * 100);
-  const items = card.map((task,i) => {
-    const on = d.done[d.idx][i];
-    return `<button onclick="dutyToggle(${i})" class="w-full text-left flex items-start gap-3 border rounded-xl px-4 py-4 mb-3 transition-colors ${on?'border-pass bg-pass/10':'border-line bg-surface'}">
-      <span class="flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-sm ${on?'border-pass bg-pass text-bg':'border-line text-transparent'}">✓</span>
-      <span class="text-sm leading-relaxed ${on?'text-muted line-through':'text-text'}">${esc(dutyCase(task))}</span>
-    </button>`;
+  const c = dutyCounts();
+  const allDone = c.done === c.total;
+  const pct = c.total ? Math.round((c.done / c.total) * 100) : 0;
+  const queued = d.runs.some(r => r.queued);
+
+  // Legend + running tally for split runs, so the split stays visible.
+  const legend = d.split ? `
+    <div class="flex flex-wrap gap-2 mb-3">${d.participants.map((p,i) => `
+      <span class="inline-flex items-center gap-1.5 text-xs border border-line rounded-full px-2.5 py-1 text-text">
+        <span class="w-2.5 h-2.5 rounded-full inline-block" style="background:${DUTY_COLORS[i]}"></span>${esc(p)} · ${c.per[i]}</span>`).join('')}
+    </div>` : '';
+
+  const body = d.runs.map((run, ri) => {
+    const listTasks = d.tasks.filter(t => t.run === ri);
+    const header = d.runs.length > 1
+      ? `<p class="text-xs uppercase tracking-wider text-golddim mt-4 mb-2">${esc(run.list)}</p>` : '';
+    const rows = listTasks.map(t => {
+      const i = d.tasks.indexOf(t);
+      const doneBy = t.by;
+      const color = doneBy !== null ? DUTY_COLORS[doneBy] : null;
+      if(!d.split){
+        const on = doneBy !== null;
+        return `<button onclick="dutyToggle(${i},0)" class="w-full text-left flex items-start gap-3 border rounded-xl px-4 py-4 mb-3 transition-colors ${on?'border-pass bg-pass/10':'border-line bg-surface'}">
+          <span class="flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-sm ${on?'border-pass bg-pass text-bg':'border-line text-transparent'}">✓</span>
+          <span class="text-sm leading-relaxed ${on?'text-muted line-through':'text-text'}">${esc(dutyCase(t.task))}</span>
+        </button>`;
+      }
+      // Split: one small box per person, initials inside, task glows the
+      // color of whoever checked it.
+      const boxes = d.participants.map((p,pi) => {
+        const initials = p.split(' ').map(w => w.charAt(0)).join('').slice(0,2).toUpperCase();
+        const mine = doneBy === pi;
+        return `<button onclick="dutyToggle(${i},${pi})" aria-label="${esc(p)} did this task"
+          class="w-8 h-8 rounded-md border text-xs font-semibold flex items-center justify-center transition-colors"
+          style="${mine?`background:${DUTY_COLORS[pi]};border-color:${DUTY_COLORS[pi]};color:#0A0A0A;`:`border-color:#2A2A2A;color:#888;`}">${esc(initials)}</button>`;
+      }).join('');
+      return `<div class="flex items-start gap-3 border rounded-xl px-4 py-3 mb-3 transition-colors"
+        style="${color?`border-color:${color};background:${color}1a;`:'border-color:#2A2A2A;background:#141414;'}">
+        <span class="flex-1 text-sm leading-relaxed ${doneBy!==null?'text-muted line-through':'text-text'}">${esc(dutyCase(t.task))}</span>
+        <span class="flex gap-1.5 flex-shrink-0">${boxes}</span>
+      </div>`;
+    }).join('');
+    return header + rows;
   }).join('');
-  const last = d.idx === total - 1;
+
   $('tab-duties').innerHTML = `
     <div class="max-w-xl mx-auto">
       <div class="flex items-center justify-between text-xs mb-2">
-        <span class="text-gold uppercase tracking-wider">${esc(d.list)}</span>
-        <span class="text-muted">Card ${d.idx+1} of ${total} · ${doneTasks}/${totalTasks} done</span>
+        <span class="text-gold uppercase tracking-wider">${esc(d.runs.map(r=>r.list).join(' + '))}</span>
+        <span class="text-muted">${c.done}/${c.total} done</span>
       </div>
-      <div class="h-1.5 bg-line rounded-full mb-4 overflow-hidden" aria-hidden="true"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
-      ${d.tables.length ? `<p class="text-xs text-muted mb-3">Your tables: ${esc(d.tables.join(', '))}</p>` : ''}
-      ${d.queued ? `<p class="text-xs text-[#d8b85e] mb-3">No connection right now. This run is saved on your phone and will send itself when the wifi returns.</p>` : ''}
-      ${items}
-      ${last
-        ? `<button onclick="dutyNext()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${allDone?'':'opacity-40 pointer-events-none'}">Finish</button>
-           ${allDone ? '' : `<p class="text-xs text-muted text-center mt-2">${totalTasks-doneTasks} task${totalTasks-doneTasks===1?' is':'s are'} still unchecked. You can move between cards freely.</p>`}`
-        : `<button onclick="dutyNext()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next</button>`}
-      ${d.idx > 0 ? `<button onclick="dutyBack()" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back a card</button>` : ''}
-      <button onclick="dutyLeave()" class="mt-4 w-full text-muted text-xs py-2">Leave this checklist</button>
+      <div class="h-1.5 bg-line rounded-full mb-3 overflow-hidden" aria-hidden="true"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
+      ${legend}
+      ${d.tables.length ? `<p class="text-xs text-muted mb-3">Your section: ${esc(d.tables.join(', '))}</p>` : ''}
+      ${queued ? `<p class="text-xs text-[#d8b85e] mb-3">No connection right now. This run is saved on your phone and will send itself when the wifi returns.</p>` : ''}
+      ${d.split ? `<p class="text-xs text-muted mb-3">Tap YOUR box when you finish a task. The task lights up in your color.</p>` : ''}
+      ${body}
+      <button onclick="dutyFinishTap()" class="mt-2 w-full bg-gold text-bg font-semibold py-3 rounded-lg ${allDone?'':'opacity-40 pointer-events-none'}">Finish</button>
+      ${allDone ? '' : `<p class="text-xs text-muted text-center mt-2">${c.total-c.done} task${c.total-c.done===1?' is':'s are'} still unchecked.</p>`}
+      <button onclick="dutyLeave()" class="mt-4 w-full text-muted text-xs py-2">Leave ${d.runs.length>1?'these checklists':'this checklist'}</button>
     </div>`;
 }
-function dutyToggle(i){ S.duty.done[S.duty.idx][i] = !S.duty.done[S.duty.idx][i]; renderDutyRun(); }
-function dutyBack(){ if(S.duty.idx > 0){ S.duty.idx--; renderDutyRun(); } }
-function dutyNext(){
-  const d = S.duty;
-  if(d.idx < d.cards.length - 1){ d.idx++; renderDutyRun(); return; }
-  const totalTasks = d.cards.reduce((n,c) => n + c.length, 0);
-  const doneTasks = d.done.reduce((n,c) => n + c.filter(Boolean).length, 0);
-  if(doneTasks !== totalTasks) return;
+// pi = which participant's box was tapped. Tapping your box claims the task;
+// tapping it again releases it; tapping over someone else's check reassigns
+// it (the last hand on the task owns it).
+function dutyToggle(i, pi){
+  const t = S.duty.tasks[i]; if(!t) return;
+  t.by = (t.by === pi) ? null : pi;
+  renderDutyRun();
+}
+function dutyFinishTap(){
+  const c = dutyCounts();
+  if(c.done !== c.total) return;
   dutyConfirm();
 }
 async function dutyLeave(){
-  const yes = await appConfirm({ title:'Leave this checklist?', message:'Your checkmarks will not be saved.',
-    confirmLabel:'Leave checklist', cancelLabel:'Keep going' });
+  const yes = await appConfirm({ title:'Leave without finishing?', message:'Your checkmarks will not be saved.',
+    confirmLabel:'Leave', cancelLabel:'Keep going' });
   if(!yes) return;
   S.duty = null;
   renderDuties();
@@ -1727,11 +1913,15 @@ async function dutyLeave(){
 // "Are you sure you are done?" before anything is submitted.
 function dutyConfirm(){
   const d = S.duty;
+  const c = dutyCounts();
   const mins = Math.max(1, Math.round((Date.now() - d.started)/60000));
+  const splitLine = d.split
+    ? `<p class="text-muted text-xs mt-2">${d.participants.map((p,i) => esc(p) + ': ' + c.per[i]).join(' · ')}</p>` : '';
   $('tab-duties').innerHTML = `
     <div class="max-w-md mx-auto text-center mt-8 fade-in">
       <p class="font-display text-2xl text-text">Are you sure you are done?</p>
-      <p class="text-muted text-sm mt-3 leading-relaxed">Every task on the ${esc(d.list)} list is checked off.${d.tables.length ? ` Your manager will check tables ${esc(d.tables.join(', '))}.` : ''}</p>
+      <p class="text-muted text-sm mt-3 leading-relaxed">Every task on ${d.runs.length>1?'all '+d.runs.length+' lists':'the '+esc(d.runs[0].list)+' list'} is checked off.${d.tables.length ? ` Your manager will check ${esc(d.tables.join(', '))}.` : ''}</p>
+      ${splitLine}
       <p class="text-muted text-xs mt-2">Took about ${mins} minute${mins===1?'':'s'}.</p>
       <button onclick="dutySubmit()" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Yes I'm Sure.</button>
       <button onclick="renderDutyRun()" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Not yet, go back</button>
@@ -1740,26 +1930,34 @@ function dutyConfirm(){
 async function dutySubmit(){
   const d = S.duty;
   const dur = Math.round((Date.now() - d.started)/1000);
-  const payload = { action:'dutyFinish', run_id:d.runId, duration_seconds:dur };
   showLoader('Submitting your checklist…');
-  let delivered = false;
-  // If the START of this run is still waiting in the outbox, the finish must
-  // queue behind it — the server can't complete a run it hasn't seen begin.
-  const startQueued = outboxLoad().some(q => q.data && q.data.action === 'dutyStart' && q.data.run_id === d.runId);
-  if(!startQueued){
-    try {
-      const r = await apiSend(payload);
-      delivered = !!(r && r.ok);
-      if(r && r.ok === false) reportError('duty-finish', new Error(r.error || 'server refused'));
-    } catch(e){ /* queued below */ }
+  const queuedStarts = new Set(outboxLoad().filter(q => q.data && q.data.action === 'dutyStart').map(q => q.data.run_id));
+  let allDelivered = true;
+  for(let ri = 0; ri < d.runs.length; ri++){
+    const run = d.runs[ri];
+    const payload = { action:'dutyFinish', run_id:run.runId, duration_seconds:dur };
+    if(d.split){
+      payload.task_log = JSON.stringify(
+        d.tasks.filter(t => t.run === ri).map(t => ({ t: dutyCase(t.task), by: d.participants[t.by] })));
+    }
+    let delivered = false;
+    // If this run's START is still waiting in the outbox, the finish must
+    // queue behind it — the server can't complete a run it hasn't seen begin.
+    if(!queuedStarts.has(run.runId)){
+      try {
+        const r = await apiSend(payload);
+        delivered = !!(r && r.ok);
+        if(r && r.ok === false) reportError('duty-finish', new Error(r.error || 'server refused'));
+      } catch(e){ /* queued below */ }
+    }
+    if(!delivered){ outboxAdd(payload, 'duty finish'); allDelivered = false; }
   }
-  if(!delivered) outboxAdd(payload, 'duty finish');
   hideLoader();
   const mins = Math.max(1, Math.round(dur/60));
-  S.duty = null;
+  S.duty = null; _dutyLists = []; _dutyParticipants = [];
   // Honest confirmation: only claim the manager can see it if the server
-  // actually acknowledged it. Otherwise say exactly what will happen.
-  $('tab-duties').innerHTML = delivered ? `
+  // actually acknowledged every run. Otherwise say exactly what will happen.
+  $('tab-duties').innerHTML = allDelivered ? `
     <div class="max-w-md mx-auto text-center mt-10 fade-in">
       <p class="font-display text-3xl text-pass">Checklist complete.</p>
       <p class="text-muted text-sm mt-3">Logged in ${mins} minute${mins===1?'':'s'}. Your manager can see it now.</p>
@@ -2238,40 +2436,67 @@ function renderTestHome(){
   const activeCat = (testCats.indexOf(S.testBrowse.section) !== -1) ? S.testBrowse.section : null;
   S.testBrowse.section = activeCat;
 
-  // ---- Home screen: category cards + Service Skills ----
+  // ---- Home screen: four dropdowns so the whole page scans in one screen ----
   if(!activeCat){
-    const cards = testCats.map((s,i) => {
+    if(!S.testAcc) S.testAcc = { food:true, bev:false, floor:false, skills:false };
+    const catCard = s => {
       const m = categoryMastery(s);
-      return `<button onclick="selectTestCat(${i})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
+      return `<button onclick="selectTestCat(${testCats.indexOf(s)})" class="bg-bg border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
         <p class="text-text font-medium text-base leading-snug">${esc(s)}</p>
         <p class="text-xs mt-1.5 ${m.mastered>0?'text-pass':'text-muted'}">${m.mastered} of ${m.total} mastered</p>
       </button>`;
-    }).join('');
-    const serviceCards = TRACKS.map(serviceCard).filter(Boolean).join('');
+    };
+    const foodCats = testCats.filter(s => BEV_SECTIONS.indexOf(s) === -1);
+    const bevCats  = testCats.filter(s => BEV_SECTIONS.indexOf(s) !== -1);
+    const sum = cats => cats.reduce((a,s) => { const m = categoryMastery(s); a.m += m.mastered; a.t += m.total; return a; }, { m:0, t:0 });
+    const fs = sum(foodCats), bs = sum(bevCats);
+
+    // Beverages: cocktail/mocktail dish tests + the Beer & Seltzer List test +
+    // Wine and Liquor slots that light up when those lists land in the sheet.
+    const beerCard = serviceCard(TRACKS.find(t => t.type === 'beers')) || '';
+    const soonCard = name => `<div class="bg-bg border border-line rounded-xl p-4 opacity-60">
+      <p class="text-text font-medium">${esc(name)}</p>
+      <p class="text-xs text-muted mt-1">Coming soon. Waiting on the list.</p></div>`;
+    const bevInner = `
+      <p class="text-muted text-sm mb-3">Know what's in every glass.</p>
+      <div class="grid grid-cols-2 gap-3">
+        ${bevCats.map(catCard).join('')}
+        ${beerCard}
+        ${soonCard('Wine Knowledge')}
+        ${soonCard('Liquor Recall')}
+      </div>`;
+
     const rooms = floorRooms();
     const floorCards = rooms.map(r => {
       const passed = roomTestPassed(r);
-      return `<div class="bg-surface border border-line rounded-xl p-4">
+      return `<div class="bg-bg border border-line rounded-xl p-4">
         <p class="text-text font-medium leading-tight">${esc(r)}</p>
         <p class="text-xs mt-1 ${passed?'text-pass':'text-muted'}">${passed?'Passed ✓':(roomTestables(r).length + ' tables')}</p>
         <button onclick="startTableTest('${esc(r).replace(/'/g,"\\'")}')"
           class="mt-3 w-full ${passed?'border border-gold text-gold':'bg-gold text-bg'} text-sm font-semibold py-2 rounded-lg">${passed?'Retake':'Start Test'}</button>
       </div>`;
     }).join('');
-    const floorHtml = rooms.length ? `
-      <h2 class="font-display text-2xl text-text mb-1">Know the Floor</h2>
-      <p class="text-muted text-sm mb-4">Name every table in a room. Pass all four rooms to be cleared to run food.</p>
-      <div class="grid grid-cols-2 gap-3 mb-9">${floorCards}</div>` : '';
+    const roomsPassed = rooms.filter(roomTestPassed).length;
+
+    const serviceCards = TRACKS.filter(t => t.type !== 'beers').map(serviceCard).filter(Boolean).join('');
+
     pane.innerHTML = `
-      <h2 class="font-display text-2xl text-text mb-1">Master the Menu, Dish by Dish</h2>
-      <p class="text-muted text-sm mb-4">Pick a category, then a dish. Level 1: spot what's in it. Level 2: name every ingredient from memory, plus its allergens. Learn a few at a time.</p>
-      <div class="grid grid-cols-2 gap-3 mb-9">${cards}</div>
-
-      ${floorHtml}
-
-      <h2 class="font-display text-2xl text-text mb-1">Service Skills</h2>
-      <p class="text-muted text-sm mb-4">The floor skills that aren't about any single dish.</p>
-      <div class="grid sm:grid-cols-2 gap-3">${serviceCards}</div>`;
+      <h2 class="font-display text-2xl text-text mb-1">Tests</h2>
+      <p class="text-muted text-sm mb-4">Tap a section to open it.</p>
+      ${accBox('Master the Menu', fs.m + ' of ' + fs.t + ' dishes mastered', `
+        <p class="text-muted text-sm mb-3">Pick a category, then a dish. Level 1: spot what's in it. Level 2: name every ingredient from memory, plus its allergens.</p>
+        <div class="grid grid-cols-2 gap-3">${foodCats.map(catCard).join('')}</div>`,
+        S.testAcc.food, `ontoggle="S.testAcc.food=this.open"`)}
+      ${accBox('Master the Menu: Beverages', bs.m + ' of ' + bs.t + ' mastered', bevInner,
+        S.testAcc.bev, `ontoggle="S.testAcc.bev=this.open"`)}
+      ${rooms.length ? accBox('Know the Floor', roomsPassed + ' of ' + rooms.length + ' rooms passed', `
+        <p class="text-muted text-sm mb-3">Name every table in a room. Pass all four rooms to be cleared to run food.</p>
+        <div class="grid grid-cols-2 gap-3">${floorCards}</div>`,
+        S.testAcc.floor, `ontoggle="S.testAcc.floor=this.open"`) : ''}
+      ${accBox('Service Skills', '', `
+        <p class="text-muted text-sm mb-3">The floor skills that aren't about any single dish.</p>
+        <div class="grid sm:grid-cols-2 gap-3">${serviceCards}</div>`,
+        S.testAcc.skills, `ontoggle="S.testAcc.skills=this.open"`)}`;
     return;
   }
 
@@ -2310,7 +2535,7 @@ function dishTestRow(it){
 function serviceCard(t){
   if(t.type === 'beers' && !S.menu.some(it => it.section === 'Beers & Seltzers')) return '';
   if(t.type === 'soon'){
-    return `<div class="bg-surface border border-line rounded-xl p-4 opacity-60">
+    return `<div class="bg-bg border border-line rounded-xl p-4 opacity-60">
       <p class="text-text font-medium">${esc(t.name)}</p>
       <p class="text-xs text-muted mt-1">Coming Soon</p></div>`;
   }
@@ -2318,7 +2543,7 @@ function serviceCard(t){
   const lr = lastResultFor(section, null);
   const last = lr ? `Last: ${lr.score_percent}% · ${fmtDate(lr.date_taken)}` : 'Not taken yet';
   const note = t.type==='allergen' ? `<p class="text-xs text-fail mt-1">Allergen accuracy is safety-critical. You need 90% to pass.</p>` : '';
-  return `<div class="bg-surface border border-line rounded-xl p-4">
+  return `<div class="bg-bg border border-line rounded-xl p-4">
     <p class="text-text font-medium leading-tight">${esc(t.name)}</p>
     ${note}
     <p class="text-xs text-muted mt-2">${last}</p>
@@ -2478,7 +2703,7 @@ function buildQuestions(track, level){
     return upsells().map(u => {
       const best = u.o[u.c];
       const options = shuffle(u.o.slice());
-      return { type:'mcq', prompt: u.s, sub:'What is the best response?', options, correctIndex: options.indexOf(best), explanation: u.e, scenario:true };
+      return { type:'mcq', prompt: u.s, sub:'Which of these is a real Bon Sake offer that fits?', options, correctIndex: options.indexOf(best), explanation: u.e, scenario:true };
     });
   }
   return [];
@@ -3038,15 +3263,7 @@ function renderProgress(){
 
   // Sections render as collapsible cards so the whole page scans in one
   // screen. A section opens by default only while it needs attention.
-  const acc = (title, note, inner, open) => `
-    <details class="acc bg-surface border border-line rounded-xl mb-3" ${open?'open':''}>
-      <summary class="flex items-center justify-between px-4 py-3">
-        <span class="min-w-0"><span class="text-sm uppercase tracking-wider text-golddim">${title}</span>
-        ${note?`<span class="text-xs text-muted ml-2">${note}</span>`:''}</span>
-        <span class="acc-chev text-gold ml-3" aria-hidden="true">›</span>
-      </summary>
-      <div class="px-4 pb-4">${inner}</div>
-    </details>`;
+  const acc = accBox;
 
   // ---- Path to Running Food: pass every room's Table Number Test ----
   const rf = runFoodProgress();
@@ -3121,15 +3338,6 @@ function renderProgress(){
     </tr>`;
   }).join('') || `<tr><td colspan="5" class="py-3 text-muted text-sm">No tests taken yet.</td></tr>`;
 
-  const missed = topMissedItems();
-  const missedHtml = missed.length ? missed.map(m => {
-    const it = S.menu.find(x => x.item_name === m.name);
-    return `<div class="flex items-center justify-between bg-bg border border-line rounded-lg px-3 py-2">
-      <div><p class="text-sm text-text">${esc(m.name)}</p><p class="text-xs text-muted">${m.correct} of ${m.attempts} correct</p></div>
-      ${it?`<button onclick="openStudyItem('${it.item_id}')" class="text-xs text-gold">Study →</button>`:''}
-    </div>`;
-  }).join('') : `<p class="text-muted text-sm">No misses tracked yet on this device.</p>`;
-
   pane.innerHTML = `
     <div class="mb-4">
       <h2 class="font-display text-2xl text-text">Welcome back, ${esc(S.user.first_name)}</h2>
@@ -3154,7 +3362,6 @@ function renderProgress(){
     ${refreshHtml}
 
     ${acc('Mastery by Category', masteredCount + ' mastered', catBars, false)}
-    ${acc('Missed Most Often', missed.length ? missed.length + ' item' + (missed.length===1?'':'s') : '', `<div class="space-y-1.5">${missedHtml}</div>`, false)}
     ${acc('Test History', taken + ' test' + (taken===1?'':'s'), `
       <div class="overflow-x-auto">
         <table class="w-full text-sm text-left">
@@ -3368,11 +3575,29 @@ async function loadDutyRuns(){
                 : `<span class="text-xs text-fail border border-fail/50 rounded px-2 py-0.5">In progress</span>`);
       const verifyBtn = (done && !x.verified_by && canVerifyDuties())
         ? `<button onclick="dutyVerifyRun('${esc(x.run_id)}')" class="text-xs bg-gold text-bg rounded px-3 py-1.5 font-semibold flex-shrink-0">Verify</button>` : '';
+      // Split runs: show who shared it, each person's task count, and an
+      // expandable list of exactly who did what.
+      let splitHtml = '';
+      if(x.participants){
+        let taskLog = [];
+        try { taskLog = JSON.parse(x.task_log || '[]'); } catch(e){ taskLog = []; }
+        const counts = {};
+        taskLog.forEach(t => { const n = String(t.by||'?'); counts[n] = (counts[n]||0) + 1; });
+        const tally = Object.keys(counts).length
+          ? Object.keys(counts).map(n => esc(n) + ': ' + counts[n]).join(' · ')
+          : esc(x.participants);
+        const detail = taskLog.length ? `
+          <details class="acc mt-1"><summary class="text-xs text-gold cursor-pointer">Who did what <span class="acc-chev">›</span></summary>
+            <div class="mt-1 space-y-0.5">${taskLog.map(t => `<p class="text-xs text-muted">${esc(t.t)} <span class="text-text">· ${esc(t.by||'?')}</span></p>`).join('')}</div>
+          </details>` : '';
+        splitHtml = `<p class="text-xs text-gold mt-0.5">Split checklist · ${tally}</p>${detail}`;
+      }
       return `<div class="py-2.5 border-b border-line last:border-0">
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
             <p class="text-sm text-text">${esc(name)} <span class="text-muted">· ${esc(x.list)}</span></p>
-            ${x.tables ? `<p class="text-xs text-muted mt-0.5">Tables: ${esc(x.tables)}</p>` : ''}
+            ${x.tables ? `<p class="text-xs text-muted mt-0.5">Section: ${esc(x.tables)}</p>` : ''}
+            ${splitHtml}
             <p class="text-xs text-muted mt-0.5">Started ${fmtClock(x.started)}${done ? ' · finished ' + fmtClock(x.completed) + ' · ' + fmtDur(x.duration_seconds) : ''}</p>
             <div class="mt-1">${status}</div>
           </div>

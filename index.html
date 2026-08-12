@@ -121,7 +121,7 @@
 <div id="offlineBanner" role="status" aria-live="polite"
      class="hidden fixed top-0 inset-x-0 z-[110] bg-[#4a3a12] border-b border-gold text-[#f0e2b8] text-center text-sm py-2 px-4"></div>
 <div id="toastWrap" aria-live="polite"
-     class="fixed bottom-5 inset-x-0 z-[120] flex flex-col items-center gap-2 px-4 pointer-events-none"></div>
+     class="fixed bottom-24 inset-x-0 z-[120] flex flex-col items-center gap-2 px-4 pointer-events-none"></div>
 
 <!-- =====================================================================
      LOGIN VIEW
@@ -154,7 +154,7 @@
       </button>
     </form>
     <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v13</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v14</p>
   </div>
 </section>
 
@@ -163,7 +163,8 @@
 ====================================================================== -->
 <section id="view-main" class="hidden min-h-screen flex flex-col">
 
-  <!-- Header -->
+  <!-- Header: identity only. The tab bar lives at the BOTTOM of the screen,
+       where thumbs naturally rest on a phone. -->
   <header class="sticky top-0 z-40 bg-nav border-b border-line">
     <div class="max-w-5xl mx-auto px-4">
       <div class="flex items-center justify-between py-3">
@@ -177,24 +178,26 @@
           <button onclick="logout()" class="text-xs text-muted hover:text-gold border border-line rounded-md px-3 py-1.5 transition-colors">Log out</button>
         </div>
       </div>
-
-      <!-- Tab bar -->
-      <!-- On phones the emoji sits above a smaller label so up to seven tabs
-           fit without truncating; on wider screens they sit inline. -->
-      <nav class="flex gap-1" role="tablist" aria-label="App sections">
-        <button data-tab="training" onclick="switchTab('training')" class="tabBtn hidden flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">🎓</span><span class="block sm:inline">Training</span></button>
-        <button data-tab="duties"   onclick="switchTab('duties')"   class="tabBtn flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">✅</span><span class="block sm:inline">Duties</span></button>
-        <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">🗺️</span><span class="block sm:inline">Floor</span></button>
-        <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">📖</span><span class="block sm:inline">Study</span></button>
-        <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">✏️</span><span class="block sm:inline">Test</span></button>
-        <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">📊</span><span class="block sm:inline">Progress</span></button>
-        <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-medium border-b-2 border-transparent text-muted transition-colors"><span class="block sm:inline sm:mr-1" aria-hidden="true">👥</span><span class="block sm:inline">Team</span></button>
-      </nav>
     </div>
   </header>
 
-  <!-- Tab content -->
-  <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5">
+  <!-- Bottom tab bar: big icons where fingers rest. The safe-area padding
+       keeps it above the iPhone home indicator. -->
+  <nav class="fixed bottom-0 inset-x-0 z-40 bg-nav border-t border-line" role="tablist" aria-label="App sections"
+       style="padding-bottom:env(safe-area-inset-bottom)">
+    <div class="max-w-5xl mx-auto flex gap-1 px-1">
+      <button data-tab="training" onclick="switchTab('training')" class="tabBtn hidden flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">🎓</span><span class="block">Training</span></button>
+      <button data-tab="duties"   onclick="switchTab('duties')"   class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">✅</span><span class="block">Duties</span></button>
+      <button data-tab="floor"    onclick="switchTab('floor')"    class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">🗺️</span><span class="block">Floor</span></button>
+      <button data-tab="study"    onclick="switchTab('study')"    class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">📖</span><span class="block">Study</span></button>
+      <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">✏️</span><span class="block">Test</span></button>
+      <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">📊</span><span class="block">Progress</span></button>
+      <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">👥</span><span class="block">Team</span></button>
+    </div>
+  </nav>
+
+  <!-- Tab content (bottom padding clears the fixed tab bar) -->
+  <main class="flex-1 max-w-5xl w-full mx-auto px-4 py-5 pb-28">
     <div id="tab-training" class="hidden" role="tabpanel" tabindex="-1" aria-label="Training"></div>
     <div id="tab-study"    class="hidden" role="tabpanel" tabindex="-1" aria-label="Study"></div>
     <div id="tab-floor"    class="hidden" role="tabpanel" tabindex="-1" aria-label="Floor"></div>
@@ -253,7 +256,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 13;           // shown on the login screen; bump with each release
+const APP_VERSION = 14;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -271,7 +274,7 @@ const S = {
   pairingsAvailable: false,
   activeTab: 'study',
   testActive: false,     // true while a test is running (locks nav)
-  study: { section: null, itemId: null, showDetailMobile: false },   // null section = category picker
+  study: { group: null, section: null, itemId: null, showDetailMobile: false },   // null group = Food/Beverage picker
   testBrowse: { section: null },   // selected category in the dish-by-dish Test tab
   config: {},            // key/value settings from the Config sheet (expiry months, thresholds)
   gates: [],             // serving-gate groups from the Gate Requirements sheet
@@ -915,7 +918,7 @@ function logout(){
   clearTimeout(_idleTimer);
   progressView = 'me';
   clearSession();   // forget the remembered login so a refresh won't bring it back
-  S.study = { section:null, itemId:null, showDetailMobile:false };
+  S.study = { group:null, section:null, itemId:null, showDetailMobile:false };
   applyNavLockStyles();
   $('loginForm').reset();
   hide($('view-main'));
@@ -1107,38 +1110,118 @@ function applyNavLockStyles(){
 /* ===========================================================================
    STUDY TAB
 =========================================================================== */
+// "Yaki — From the Grill" must stay byte-identical to the Sheet internally,
+// but on cards it reads as two centered lines.
+function sectionCardLabel(sec){
+  if(sec === 'Yaki — From the Grill') return '<span class="block">Yaki</span><span class="block">From The Grill</span>';
+  return esc(sec);
+}
+// Wine sections are named "Wines — <type>" in the sheet; cards and headers
+// show just the type.
+function wineTypeOf(sec){
+  const m = String(sec || '').match(/^Wines\s*[—–-]+\s*(.+)$/);
+  return m ? m[1].trim() : null;
+}
+
 function renderStudy(){
   const pane = $('tab-study');
   if(!S.study.section){ renderStudyCats(pane); return; }
+  const wine = wineTypeOf(S.study.section);
+  const backBtn = wine
+    ? `<button onclick="renderWineTypes()" class="text-gold text-sm mb-3">&larr; Wine</button>`
+    : `<button onclick="backToCategories()" class="text-gold text-sm mb-3">&larr; Categories</button>`;
   pane.innerHTML = `
-    <button onclick="backToCategories()" class="text-gold text-sm mb-3">&larr; Categories</button>
-    <h2 class="font-display text-2xl text-text mb-3">${esc(S.study.section)}</h2>
+    ${backBtn}
+    <h2 class="font-display text-2xl text-text mb-3">${wine ? esc(wine) : esc(S.study.section)}</h2>
     <div id="studyBody"></div>`;
   renderStudyBody();
 }
 
-// The Study landing screen: one large card per menu category.
+// Study opens on a two-way fork (Food or Beverages), then that side's
+// categories: fewer, bigger buttons and less scrolling on a phone.
 function renderStudyCats(pane){
-  const cards = SECTIONS.filter(s => s !== 'All Items').map(sec => {
+  const g = S.study.group;
+  if(!g){
+    pane.innerHTML = `
+      <h2 class="font-display text-2xl text-text mb-1 text-center">Study</h2>
+      <p class="text-muted text-sm mb-5 text-center">What are you studying today?</p>
+      <div class="grid gap-4 max-w-md mx-auto">
+        <button onclick="S.study.group='food';renderStudy()" class="bg-surface border border-line rounded-2xl py-10 text-center hover:border-gold transition-colors">
+          <span class="block text-4xl mb-2" aria-hidden="true">🍣</span>
+          <span class="block font-display text-2xl text-text">Food Menus</span>
+        </button>
+        <button onclick="S.study.group='bev';renderStudy()" class="bg-surface border border-line rounded-2xl py-10 text-center hover:border-gold transition-colors">
+          <span class="block text-4xl mb-2" aria-hidden="true">🍶</span>
+          <span class="block font-display text-2xl text-text">Beverage Menus</span>
+        </button>
+      </div>
+      <p class="text-center mt-8"><button onclick="selectSection('All Items')" class="text-gold text-sm">Browse every item in one list &rarr;</button></p>`;
+    return;
+  }
+  const cardFor = sec => {
     const n = (sec === 'Menu Terms') ? flashcards().length : sectionItems(sec).length;
     if(n === 0) return '';
     const sub = (sec === 'Menu Terms') ? `${n} terms` : `${n} item${n===1?'':'s'}`;
     return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
-      class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
-      <p class="text-text font-medium text-base leading-snug">${esc(sec)}</p>
+      class="bg-surface border border-line rounded-xl px-3 py-6 text-center hover:border-gold transition-colors">
+      <p class="text-text font-medium text-base leading-snug">${sectionCardLabel(sec)}</p>
       <p class="text-muted text-xs mt-1.5">${sub}</p>
     </button>`;
-  }).join('');
+  };
+  let cards;
+  if(g === 'food'){
+    cards = SECTIONS.filter(s => s !== 'All Items' && BEV_SECTIONS.indexOf(s) === -1).map(cardFor).join('');
+  } else {
+    // Wine always shows, even before the list is populated, so the team can
+    // see it coming.
+    const wineCount = S.menu.filter(it => wineTypeOf(it.section)).length;
+    cards = BEV_SECTIONS.map(cardFor).join('') + `
+      <button onclick="renderWineTypes()"
+        class="bg-surface border border-line rounded-xl px-3 py-6 text-center hover:border-gold transition-colors">
+        <p class="text-text font-medium text-base leading-snug">Wine</p>
+        <p class="text-muted text-xs mt-1.5">${wineCount ? wineCount + ' wine' + (wineCount===1?'':'s') : 'List coming soon'}</p>
+      </button>`;
+  }
   pane.innerHTML = `
-    <h2 class="font-display text-2xl text-text mb-1">Study the Menu</h2>
-    <p class="text-muted text-sm mb-4">Pick a category. Learn it one dish at a time.</p>
-    <div class="grid grid-cols-2 gap-3">${cards}</div>
-    <p class="text-center mt-6"><button onclick="selectSection('All Items')" class="text-gold text-sm">Browse every item in one list &rarr;</button></p>`;
+    <button onclick="studyBackToGroups()" class="text-gold text-sm mb-3">&larr; Study</button>
+    <h2 class="font-display text-2xl text-text mb-1 text-center">${g === 'food' ? 'Food Menus' : 'Beverage Menus'}</h2>
+    <p class="text-muted text-sm mb-4 text-center">Pick a category. Learn it one item at a time.</p>
+    <div class="grid grid-cols-2 gap-3">${cards}</div>`;
 }
 
+function studyBackToGroups(){
+  S.study.group = null; S.study.section = null; S.study.itemId = null; S.study.showDetailMobile = false;
+  renderStudy();
+}
 function backToCategories(){
   S.study.section = null; S.study.itemId = null; S.study.showDetailMobile = false;
   renderStudy();
+}
+
+// The Wine browser: one card per type, alphabetical. Types come from the
+// classic list plus any "Wines — <type>" sections that appear in the sheet.
+const WINE_TYPES_BASE = ['Cabernet Sauvignon','Chardonnay','Pinot Grigio','Pinot Noir','Sauvignon Blanc'];
+function wineTypes(){
+  const set = new Set(WINE_TYPES_BASE);
+  S.menu.forEach(it => { const t = wineTypeOf(it.section); if(t) set.add(t); });
+  return [...set].sort((a,b) => a.localeCompare(b));
+}
+function renderWineTypes(){
+  S.study.group = 'bev'; S.study.section = null; S.study.itemId = null;
+  const cards = wineTypes().map(t => {
+    const sec = 'Wines — ' + t;
+    const n = S.menu.filter(it => it.section === sec).length;
+    return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
+      class="bg-surface border border-line rounded-xl px-3 py-6 text-center hover:border-gold transition-colors ${n?'':'opacity-70'}">
+      <p class="text-text font-medium text-base leading-snug">${esc(t)}</p>
+      <p class="text-muted text-xs mt-1.5">${n ? n + ' wine' + (n===1?'':'s') : 'Coming soon'}</p>
+    </button>`;
+  }).join('');
+  $('tab-study').innerHTML = `
+    <button onclick="backToCategories()" class="text-gold text-sm mb-3">&larr; Beverage Menus</button>
+    <h2 class="font-display text-2xl text-text mb-1 text-center">Wine</h2>
+    <p class="text-muted text-sm mb-4 text-center">Pick a type.</p>
+    <div class="grid grid-cols-2 gap-3">${cards}</div>`;
 }
 
 function selectSection(sec){
@@ -1164,7 +1247,11 @@ function buildStudyListHtml(items){
       return ing.toLowerCase().includes(q);
     });
   }
-  if(!list.length) return `<p class="p-4 text-muted text-sm">${q ? 'Nothing matches "' + esc(q) + '".' : 'No items.'}</p>`;
+  if(!list.length){
+    const empty = q ? 'Nothing matches "' + esc(q) + '".'
+      : (wineTypeOf(S.study.section) ? 'No wines here yet. They show up as soon as the wine list is added.' : 'No items.');
+    return `<p class="p-4 text-muted text-sm">${empty}</p>`;
+  }
   return list.map(it => {
     const active = it.item_id === S.study.itemId;
     return `<button onclick="selectItem('${it.item_id}')"
@@ -2209,11 +2296,13 @@ function markerTile(t){
   if(t.kind === 'door'){
     // A label can carry its own arrows (e.g. "⇅ Main Entrance") to control
     // direction from the sheet; otherwise doors default to horizontal arrows.
+    // Doors are plain text (no box) so the rooms read cleaner.
     const hasArrow = /^[⇄⇅↔↕←→↑↓]/.test(t.table);
-    return `<div class="floorMark absolute flex items-center justify-center border border-gold/70 bg-gold/10 rounded-md text-gold text-xs font-semibold px-1 text-center leading-tight" style="${pos}">${hasArrow ? label : '⇄ ' + label}</div>`;
+    return `<div class="floorMark absolute flex items-center justify-center text-gold text-xs font-semibold px-1 text-center leading-tight" style="${pos}">${hasArrow ? label : '⇄ ' + label}</div>`;
   }
-  if(t.kind === 'host' || t.kind === 'station')
-    return `<div class="floorMark absolute flex items-center justify-center border border-gold bg-gold/15 rounded-md text-gold text-xs font-semibold uppercase tracking-wide px-1 text-center leading-tight" style="${pos}">${label}</div>`;
+  // Host stands and server stations are not drawn: the maps are for table
+  // numbers and ways in and out, not furniture.
+  if(t.kind === 'host' || t.kind === 'station') return '';
   if(t.kind === 'stairs')
     return `<div class="floorMark absolute flex items-center justify-center border border-line rounded-md text-muted text-xs font-medium uppercase px-1" style="${pos}">${label}</div>`;
   // note: plain orientation text, no box
@@ -2449,8 +2538,8 @@ function renderTestHome(){
     if(!S.testAcc) S.testAcc = { food:true, bev:false, floor:false, skills:false };
     const catCard = s => {
       const m = categoryMastery(s);
-      return `<button onclick="selectTestCat(${testCats.indexOf(s)})" class="bg-bg border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
-        <p class="text-text font-medium text-base leading-snug">${esc(s)}</p>
+      return `<button onclick="selectTestCat(${testCats.indexOf(s)})" class="bg-bg border border-line rounded-xl p-5 text-center hover:border-gold transition-colors">
+        <p class="text-text font-medium text-base leading-snug">${sectionCardLabel(s)}</p>
         <p class="text-xs mt-1.5 ${m.mastered>0?'text-pass':'text-muted'}">${m.mastered} of ${m.total} mastered</p>
       </button>`;
     };

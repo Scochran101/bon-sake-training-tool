@@ -52,7 +52,8 @@ const mustExist = [
   'accBox','renderDutySplit','renderDutyTeamPicker','renderDutySection',
   'dutyBegin','dutyCounts','dutyToggle','listRoomHint','tableRoomOf',
   'isAdmin','userRoles','renderTeamProgress','drawTeamProgress','dutyEditorHtml',
-  'dutyEditOpen','dutyEditSave','teamCacheLoad','adminToggleLb'
+  'dutyEditOpen','dutyEditSave','teamCacheLoad','adminToggleLb',
+  'sectionCardLabel','wineTypeOf','wineTypes','renderWineTypes','studyBackToGroups'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

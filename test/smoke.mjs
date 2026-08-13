@@ -53,7 +53,8 @@ const mustExist = [
   'dutyBegin','dutyCounts','dutyToggle','listRoomHint','tableRoomOf',
   'isAdmin','userRoles','renderTeamProgress','drawTeamProgress','dutyEditorHtml',
   'dutyEditOpen','dutyEditSave','teamCacheLoad','adminToggleLb',
-  'sectionCardLabel','wineTypeOf','wineTypes','renderWineTypes','studyBackToGroups'
+  'sectionCardLabel','wineTypeOf','wineTypes','renderWineTypes','studyBackToGroups',
+  'doLoginByPin','finishLogin','afterLogin','showPinChange','submitNewPin','tryOfflineLoginByPin','showLoginNames'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

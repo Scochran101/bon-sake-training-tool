@@ -130,22 +130,28 @@
   <div class="w-full max-w-sm fade-in">
     <div id="loginLogo" class="flex justify-center mb-3"></div>
 
+    <!-- One-field sign-in: an activated 5-digit PIN is the whole login. The
+         name fields appear only for first-timers (starter PIN 12345), legacy
+         4-digit PINs, and the rare duplicate. -->
     <form id="loginForm" class="mt-8 space-y-4">
       <div>
-        <label class="block text-xs uppercase tracking-wider text-golddim mb-1">First Name</label>
-        <input id="loginFirst" type="text" autocomplete="off" required
-          class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="First name" />
-      </div>
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-golddim mb-1">Last Name</label>
-        <input id="loginLast" type="text" autocomplete="off" required
-          class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="Last name" />
-      </div>
-      <div>
-        <label class="block text-xs uppercase tracking-wider text-golddim mb-1">4-Digit PIN</label>
-        <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" required
+        <label class="block text-xs uppercase tracking-wider text-golddim mb-1">Your PIN</label>
+        <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" required
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="••••" />
+          class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="•••••" />
+      </div>
+      <div id="loginNames" class="hidden space-y-4">
+        <p id="loginNamesMsg" class="text-xs text-gold text-center leading-relaxed"></p>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-golddim mb-1">First Name</label>
+          <input id="loginFirst" type="text" autocomplete="off"
+            class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="First name" />
+        </div>
+        <div>
+          <label class="block text-xs uppercase tracking-wider text-golddim mb-1">Last Name</label>
+          <input id="loginLast" type="text" autocomplete="off"
+            class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="Last name" />
+        </div>
       </div>
       <p id="loginError" class="hidden text-fail text-sm text-center"></p>
       <button type="submit"
@@ -153,8 +159,31 @@
         Sign In
       </button>
     </form>
-    <p class="text-center text-muted text-xs mt-6">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v14</p>
+    <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
+    <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v15</p>
+  </div>
+</section>
+
+<!-- =====================================================================
+     CHOOSE-YOUR-PIN VIEW
+     Shown after signing in with the starter PIN (12345) or a legacy
+     4-digit PIN. Unskippable: from here on, the PIN is the whole login.
+====================================================================== -->
+<section id="view-pinchange" class="hidden min-h-screen flex flex-col items-center justify-center px-6 py-10">
+  <div class="w-full max-w-sm fade-in text-center">
+    <div id="pinLogo" class="flex justify-center mb-4"></div>
+    <h2 class="font-display text-2xl text-text">Choose your PIN</h2>
+    <p class="text-muted text-sm mt-2 leading-relaxed">Pick a 5-digit code only you know. From now on it's your whole sign-in: no name, just the PIN.</p>
+    <input id="newPin1" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none mt-6" placeholder="New 5-digit PIN" />
+    <input id="newPin2" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5"
+      autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+      class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none mt-3" placeholder="Type it again" />
+    <p id="pinChangeError" class="hidden text-fail text-sm mt-3"></p>
+    <button onclick="submitNewPin()" class="mt-5 w-full bg-gold hover:bg-[#d8b85e] text-bg font-semibold py-3 rounded-lg transition-colors">Save My PIN</button>
+    <button onclick="logout()" class="mt-3 w-full text-muted text-xs py-2">Log out instead</button>
   </div>
 </section>
 
@@ -256,7 +285,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 14;           // shown on the login screen; bump with each release
+const APP_VERSION = 15;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -603,7 +632,7 @@ function _openModal(o, withCancel, withInput){
       input.value = '';
       input.placeholder = o.placeholder || '';
       input.setAttribute('inputmode', o.pin ? 'numeric' : 'text');
-      input.maxLength = o.pin ? 4 : 200;
+      input.maxLength = o.pin ? 5 : 200;
     }
     const prevFocus = document.activeElement;
     const done = v => {
@@ -667,6 +696,7 @@ window.addEventListener('DOMContentLoaded', () => {
   $('loginLogo').innerHTML  = logoImg('w-56 h-56 sm:w-64 sm:h-64');
   $('headerLogo').innerHTML = logoImg('w-11 h-11');
   $('modalLogo').innerHTML  = logoImg('w-20 h-20');
+  $('pinLogo').innerHTML    = logoImg('w-24 h-24');
   $('loginForm').addEventListener('submit', handleLogin);
   $('antiCheatStart').addEventListener('click', beginTestAfterModal);
   // Version stamp for support: "app vX · server vY" on the login screen.
@@ -686,24 +716,50 @@ window.addEventListener('DOMContentLoaded', () => {
 async function handleLogin(e){
   e.preventDefault();
   hide($('loginError'));
-  const first = $('loginFirst').value.trim();
-  const last  = $('loginLast').value.trim();
-  const pin   = $('loginPin').value.trim();
-  if(!first || !last || !pin){ return loginError('Please fill in every field.'); }
+  const pin = $('loginPin').value.trim();
+  if(!/^\d{4,5}$/.test(pin)) return loginError('Enter your PIN.');
+  const namesShown = !$('loginNames').classList.contains('hidden');
 
   showLoader('Signing you in…');
   try {
-    const r = await doLogin(first, last, pin);
+    let r;
+    if(namesShown){
+      const first = $('loginFirst').value.trim();
+      const last  = $('loginLast').value.trim();
+      if(!first || !last){ hideLoader(); return loginError('Please fill in your first and last name.'); }
+      r = await doLogin(first, last, pin);
+    } else {
+      r = await doLoginByPin(pin);
+      if(!r.ok && r.need_name){
+        // Starter PIN, legacy 4-digit PIN, or a duplicate: ask who they are,
+        // one time only.
+        hideLoader();
+        showLoginNames('Almost there. Enter your name too, just this once.');
+        return;
+      }
+    }
     hideLoader();
     if(!r.ok) return loginError(r.error || 'Name or PIN not recognized. See your manager.');
-    enterApp();
+    afterLogin(r);
   } catch(err){
     hideLoader();
     loginError('Something went wrong connecting to the server. Please try again.');
   }
 }
+function showLoginNames(msg){
+  const w = $('loginNames');
+  show(w);
+  $('loginNamesMsg').textContent = msg || '';
+  $('loginFirst').focus();
+}
+// Where a fresh sign-in lands: straight into the app, unless they're still
+// on a starter or legacy PIN — then they choose their own first.
+function afterLogin(r, opts){
+  if(r.needs_pin_change) showPinChange();
+  else enterApp(opts);
+}
 
-// Shared login path used by both the form and silent session-restore on refresh.
+// Shared login path used by the name form and silent session-restore on refresh.
 async function doLogin(first, last, pin){
   let r;
   try {
@@ -716,6 +772,28 @@ async function doLogin(first, last, pin){
     throw e;
   }
   if(!r.ok) return { ok:false, error:r.error };
+  return finishLogin(r, pin);
+}
+
+// PIN-only path: the activated 5-digit PIN identifies the person by itself.
+async function doLoginByPin(pin){
+  let r;
+  try {
+    r = await apiPost({ action:'loginByPin', pin });
+  } catch(e){
+    const off = tryOfflineLoginByPin(pin);
+    if(off) return off;
+    throw e;
+  }
+  // A backend that predates v15 doesn't know this action — fall back to the
+  // name form instead of a dead end.
+  if(!r.ok && /unknown action/i.test(r.error || '')) return { ok:false, need_name:true };
+  if(!r.ok) return { ok:false, error:r.error, need_name: !!r.need_name };
+  return finishLogin(r, pin);
+}
+
+// Populates state from a successful login response (either path).
+async function finishLogin(r, pin){
   S.user = r.user;
   S.pin = pin;
   S.results = r.results || [];
@@ -740,9 +818,10 @@ async function doLogin(first, last, pin){
     applyMenuPayload(m);
     if(!m.fromCache && m.hash) menuCacheSave(m.hash, m);
   }
-  saveSession(first, last, pin);   // remember login so a pull-to-refresh restores it
-  userCacheSave(first, last, pin); // remember enough to open offline next time
-  return { ok:true };
+  // Canonical names come from the server row, not what was typed.
+  saveSession(S.user.first_name, S.user.last_name, pin);   // pull-to-refresh restore
+  userCacheSave(S.user.first_name, S.user.last_name, pin); // offline mode next time
+  return { ok:true, needs_pin_change: !!r.needs_pin_change };
 }
 
 // Content that ships from the Sheet, with the built-in copy as the fallback
@@ -793,6 +872,21 @@ function userCacheSave(first, last, pin){
       JSON.stringify({ pin, user:S.user, results:S.results, dishNotes:S.dishNotes, roster:S.roster }));
   } catch(e){ reportError('user-cache', e); }
 }
+// Offline PIN-only sign-in: match the PIN against the cached snapshots of
+// people who have signed in on this device before.
+function tryOfflineLoginByPin(pin){
+  if(!/^\d{5}$/.test(pin) || pin === '12345') return null;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf('bonsake_usercache_') !== 0) continue;
+    let u = null;
+    try { u = JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ u = null; }
+    if(u && u.pin === pin && u.user){
+      return tryOfflineLogin(u.user.first_name, u.user.last_name, pin);
+    }
+  }
+  return null;
+}
 function tryOfflineLogin(first, last, pin){
   let u = null;
   try { u = JSON.parse(localStorage.getItem(userCacheKey(first, last)) || 'null'); } catch(e){ u = null; }
@@ -830,8 +924,41 @@ async function restoreSession(){
     const r = await doLogin(s.first, s.last, s.pin);
     hideLoader();
     if(!r.ok){ clearSession(); return; }   // stale creds (e.g. PIN was changed) → back to login
-    enterApp({ fromRefresh:true });
+    afterLogin(r, { fromRefresh:true });   // still on a starter PIN? finish choosing one
   } catch(e){ hideLoader(); clearSession(); }
+}
+
+/* ---- Choose-your-PIN (forced after starter or legacy 4-digit sign-in) ---- */
+function showPinChange(){
+  hide($('view-login'));
+  hide($('view-main'));
+  show($('view-pinchange'));
+  hide($('pinChangeError'));
+  $('newPin1').value = ''; $('newPin2').value = '';
+  $('newPin1').focus();
+}
+function pinChangeError(msg){ const el = $('pinChangeError'); el.textContent = msg; show(el); }
+async function submitNewPin(){
+  hide($('pinChangeError'));
+  const p1 = $('newPin1').value.trim(), p2 = $('newPin2').value.trim();
+  if(!/^\d{5}$/.test(p1)) return pinChangeError('Your PIN must be exactly 5 digits.');
+  if(p1 === '12345')      return pinChangeError('12345 is the shared starter PIN. Pick your own.');
+  if(p1 !== p2)           return pinChangeError('The two entries do not match. Try again.');
+  showLoader('Saving your PIN…');
+  try {
+    const r = await apiSend({ action:'changePin', first:S.user.first_name, last:S.user.last_name, pin:S.pin, new_pin:p1 });
+    hideLoader();
+    if(!r.ok) return pinChangeError(r.error || 'Could not save your PIN. Try again.');
+    S.pin = p1;
+    saveSession(S.user.first_name, S.user.last_name, p1);
+    userCacheSave(S.user.first_name, S.user.last_name, p1);
+    hide($('view-pinchange'));
+    toast('PIN saved. From now on, just your PIN signs you in.');
+    enterApp();
+  } catch(e){
+    hideLoader();
+    pinChangeError('Connection error. Your PIN was not changed. Try again.');
+  }
 }
 
 function loginError(msg){ const el = $('loginError'); el.textContent = msg; show(el); }
@@ -922,6 +1049,8 @@ function logout(){
   applyNavLockStyles();
   $('loginForm').reset();
   hide($('view-main'));
+  hide($('view-pinchange'));
+  hide($('loginNames'));          // next person starts from the one-field screen
   show($('view-login'));
   hide($('loginError'));
 }
@@ -3558,7 +3687,7 @@ function drawTeam(d){
          </div>`
       : `<span class="text-xs text-muted">${esc(staffRoles(s).join(', ')||'')}${s.trainer?' · 🎓 Trainer':''}${s.shift_lead?' · ⭐ Shift Lead':''}${s.training_for?` · 📘 Training: ${esc(s.training_for)}${s.assigned_trainer?' with '+esc(s.assigned_trainer):''}`:''}</span>`;
     const pinCell = editing
-      ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="4" value="${esc(s.pin)}" class="w-16 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
+      ? `<input id="team_pin_${i}" inputmode="numeric" maxlength="5" value="${esc(s.pin)}" class="w-20 bg-bg border border-line rounded px-2 py-1 text-xs text-text tracking-widest"/>`
       : `<span class="text-text tracking-widest">${esc(s.pin)}</span>`;
     const actions = editing
       ? `<button onclick="teamSave(${i})" class="text-xs bg-gold text-bg rounded px-3 py-1.5 font-semibold">Save</button>
@@ -3593,7 +3722,7 @@ function drawTeam(d){
       <p class="text-xs text-muted mt-2 mb-1">Position (pick every job they work):</p>
       <div class="flex flex-wrap gap-x-4 gap-y-1">${jobBoxes}</div>
       <div class="grid grid-cols-2 gap-2 mt-2">
-        <input id="add_pin" inputmode="numeric" maxlength="4" placeholder="4-digit PIN" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
+        <input id="add_pin" inputmode="numeric" maxlength="5" value="12345" title="Starter PIN. They pick their own 5-digit code at first sign-in." class="bg-bg border border-line rounded px-3 py-2 text-sm text-text tracking-widest placeholder-muted" />
         <select id="add_training_for" onchange="$('add_trainer_wrap').classList.toggle('hidden', !this.value)" class="bg-bg border border-line rounded px-3 py-2 text-sm text-text">
           ${['','Busser','Runner','Server','Bartender'].map(p=>`<option value="${p}">${p?('Training for '+p):'Not in training'}</option>`).join('')}
         </select>
@@ -3969,7 +4098,7 @@ async function teamAddMember(){
   const trainerSel = $('add_trainer');
   const trainerName = trainingFor && trainerSel ? trainerSel.value : '';
   if(!first||!last||!pin) return teamMsg('First name, last name, and PIN are required.', false);
-  if(!/^\d{4}$/.test(pin)) return teamMsg('PIN must be exactly 4 digits.', false);
+  if(!/^\d{4,5}$/.test(pin)) return teamMsg('PIN must be 4 or 5 digits. 12345 is the usual starter.', false);
   if(!jobs.length) return teamMsg('Pick at least one position.', false);
   if(trainingFor && trainerSel && !trainerName) return teamMsg('Pick who will train them.', false);
   showLoader('Adding team member…');
@@ -3988,7 +4117,7 @@ async function teamSave(i){
   const jobs = [...document.querySelectorAll('.teamJob_'+i+':checked')].map(b => b.value);
   const pin = $('team_pin_'+i).value.trim();
   if(!jobs.length){ appAlert('Pick at least one position.', 'Check the jobs'); return; }
-  if(pin && !/^\d{4}$/.test(pin)){ appAlert('PIN must be exactly 4 digits.', 'Check the PIN'); return; }
+  if(pin && !/^\d{4,5}$/.test(pin)){ appAlert('PIN must be 4 or 5 digits. 12345 is the usual starter.', 'Check the PIN'); return; }
   showLoader('Saving…');
   try {
     const tr = $('team_tr_'+i), sl = $('team_sl_'+i), tf = $('team_tf_'+i);

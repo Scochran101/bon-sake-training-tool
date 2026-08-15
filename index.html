@@ -71,6 +71,9 @@
   .spin { animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* Checklist editor: the row being dragged floats above the list */
+  .dragging { opacity:.92; border-color:#C9A84C !important; box-shadow:0 8px 20px rgba(0,0,0,.55); }
+
   /* Floor map tiles keep a usable minimum size on small phones, whatever
      their percentage box works out to. */
   .tpTable, .floorTile { min-width:34px; min-height:30px; }
@@ -161,7 +164,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v15</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v16</p>
   </div>
 </section>
 
@@ -269,6 +272,12 @@
 </div>
 
 <!-- =====================================================================
+     DUTY CHECKLIST EDITOR (managers) — full screen so every task is
+     readable while editing; rows reorder by grabbing the ⠿ handle.
+====================================================================== -->
+<div id="dutyEditorFS" class="hidden fixed inset-0 z-[85] bg-bg overflow-y-auto"></div>
+
+<!-- =====================================================================
      QUICK PRACTICE OVERLAY
 ====================================================================== -->
 <div id="quickPractice" class="hidden fixed inset-0 z-[80] bg-black/85 flex items-end sm:items-center justify-center sm:px-6">
@@ -285,7 +294,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 15;           // shown on the login screen; bump with each release
+const APP_VERSION = 16;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -974,16 +983,15 @@ function enterApp(opts){
   progressView = isManager() ? 'team' : 'me';   // managers open Progress on the team view
   // If they refreshed mid-test, it's logged as left-early and they land on the test list.
   const wasMidTest = checkAbandonedOnReturn();
-  // Trainees land on their training plan — that's where their day starts.
-  // Everyone else starts on Study.
-  let tab = (S.user && S.user.training_for) ? 'training' : 'study';
+  // Everyone lands on Duties: the shift starts with the checklist.
+  let tab = 'duties';
   if(wasMidTest){
     tab = 'test';
   } else if(opts.fromRefresh){
     const saved = sessionStorage.getItem('bonsake_tab');
     if(saved && ['training','study','floor','duties','test','progress','team'].includes(saved)) tab = saved;
-    if(tab === 'team' && !isManager()) tab = 'study';
-    if(tab === 'training' && !canSeeTraining()) tab = 'study';
+    if(tab === 'team' && !isManager()) tab = 'duties';
+    if(tab === 'training' && !canSeeTraining()) tab = 'duties';
   }
   switchTab(tab);
 }
@@ -3761,64 +3769,120 @@ function drawTeam(d){
 /* ---- Duty checklist editor (Team tab, managers) --------------------------- */
 let _dutyEdit = null;   // { list, tasks:[{task, days}] } while a list is open
 
+// The Team tab shows only the picker; opening a list takes over the whole
+// screen so a manager can read and edit every task comfortably.
 function dutyEditorHtml(){
-  if(!_dutyEdit){
-    const names = dutyListNames();
-    if(!names.length) return `<p class="text-muted text-sm">No checklists in the sheet yet.</p>`;
-    return `<div class="flex flex-wrap gap-2">${names.map(n =>
-      `<button onclick="dutyEditOpen('${esc(n).replace(/'/g,"\\'")}')" class="text-xs border border-line hover:border-gold text-text rounded-lg px-3 py-2 transition-colors">${esc(n)}</button>`).join('')}</div>`;
-  }
-  const d = _dutyEdit;
-  const rows = d.tasks.map((t,i) => `
-    <div class="flex items-start gap-2 mb-2">
-      <div class="flex flex-col gap-0.5 flex-shrink-0">
-        <button onclick="dutyEditMove(${i},-1)" aria-label="Move up" class="text-muted hover:text-gold text-xs leading-none px-1 ${i===0?'opacity-30 pointer-events-none':''}">▲</button>
-        <button onclick="dutyEditMove(${i},1)" aria-label="Move down" class="text-muted hover:text-gold text-xs leading-none px-1 ${i===d.tasks.length-1?'opacity-30 pointer-events-none':''}">▼</button>
-      </div>
-      <input value="${esc(t.task)}" oninput="_dutyEdit.tasks[${i}].task=this.value"
-        class="flex-1 bg-bg border border-line rounded px-2 py-1.5 text-sm text-text min-w-0" />
-      <input value="${esc(t.days)}" oninput="_dutyEdit.tasks[${i}].days=this.value" placeholder="Days" title="Blank = every day. Otherwise like Wed|Sat"
-        class="w-20 bg-bg border border-line rounded px-2 py-1.5 text-xs text-text flex-shrink-0" />
-      <button onclick="dutyEditRemove(${i})" aria-label="Delete task" class="text-fail text-base leading-none px-1.5 py-1 flex-shrink-0">×</button>
-    </div>`).join('');
-  return `
-    <div class="bg-surface border border-gold rounded-xl p-4">
-      <div class="flex items-center justify-between mb-3">
-        <p class="text-sm text-gold font-semibold">${esc(d.list)}</p>
-        <button onclick="_dutyEdit=null;dutyEditorRedraw()" class="text-xs text-muted">← All checklists</button>
-      </div>
-      <p class="text-xs text-muted mb-3">Days column: leave blank for every day, or write days like Wed|Sat.</p>
-      ${rows || '<p class="text-muted text-sm mb-2">No tasks yet. Add the first one.</p>'}
-      <button onclick="dutyEditAdd()" class="w-full border border-line text-gold text-sm py-2 rounded-lg mb-2">+ Add task</button>
-      <div class="flex gap-2">
-        <button onclick="dutyEditSave()" class="flex-1 bg-gold text-bg font-semibold py-2.5 rounded-lg text-sm">Save checklist</button>
-        <button onclick="dutyEditDelete()" class="border border-fail text-fail text-sm px-4 rounded-lg">Delete list</button>
-      </div>
-    </div>`;
+  const names = dutyListNames();
+  if(!names.length) return `<p class="text-muted text-sm">No checklists in the sheet yet.</p>`;
+  return `<div class="flex flex-wrap gap-2">${names.map(n =>
+    `<button onclick="dutyEditOpen('${esc(n).replace(/'/g,"\\'")}')" class="text-sm border border-line hover:border-gold text-text rounded-lg px-4 py-2.5 transition-colors">${esc(n)}</button>`).join('')}</div>`;
 }
 function dutyEditorRedraw(){ const box = $('dutyEditorBox'); if(box) box.innerHTML = dutyEditorHtml(); }
+
+function renderDutyEditorFS(){
+  const d = _dutyEdit;
+  const fs = $('dutyEditorFS');
+  if(!d){ hide(fs); fs.innerHTML = ''; dutyEditorRedraw(); return; }
+  const rows = d.tasks.map((t,i) => `
+    <div id="dutyRow_${i}" data-idx="${i}" class="flex items-center gap-2 mb-2 bg-surface border border-line rounded-xl p-2 transition-colors">
+      <span onpointerdown="dutyDragStart(event, ${i})" aria-label="Drag to reorder" role="button"
+        class="cursor-grab text-muted text-2xl leading-none px-2 py-3 select-none flex-shrink-0" style="touch-action:none">⠿</span>
+      <input value="${esc(t.task)}" oninput="_dutyEdit.tasks[${i}].task=this.value;_dutyEdit.dirty=true"
+        class="flex-1 bg-bg border border-line rounded-lg px-3 py-3 text-base text-text min-w-0 focus:border-gold focus:outline-none" />
+      <input value="${esc(t.days)}" oninput="_dutyEdit.tasks[${i}].days=this.value;_dutyEdit.dirty=true" placeholder="Days" title="Blank = every day. Otherwise like Wed|Sat"
+        class="w-24 bg-bg border border-line rounded-lg px-2 py-3 text-sm text-text text-center flex-shrink-0 focus:border-gold focus:outline-none" />
+      <button onclick="dutyEditRemove(${i})" aria-label="Delete task" class="text-fail text-2xl leading-none px-2 py-2 flex-shrink-0">×</button>
+    </div>`).join('');
+  fs.innerHTML = `
+    <div class="max-w-2xl mx-auto px-4 py-5 pb-16">
+      <div class="flex items-center justify-between gap-3 mb-1">
+        <h2 class="font-display text-2xl text-text min-w-0 truncate">${esc(d.list)}</h2>
+        <button onclick="dutyEditClose()" class="text-sm text-muted border border-line rounded-lg px-4 py-2 flex-shrink-0">Close</button>
+      </div>
+      <p class="text-xs text-muted mb-4">Hold ⠿ and drag to reorder. Days: blank = every day, or write days like Wed|Sat.</p>
+      <div id="dutyEditRows">${rows || ''}</div>
+      ${rows ? '' : '<p class="text-muted text-sm mb-3">No tasks yet. Add the first one.</p>'}
+      <button onclick="dutyEditAdd()" class="w-full border border-line text-gold text-base py-3 rounded-xl mb-3">+ Add task</button>
+      <div class="flex gap-2">
+        <button onclick="dutyEditSave()" class="flex-1 bg-gold text-bg font-semibold py-3.5 rounded-xl text-base">Save checklist</button>
+        <button onclick="dutyEditDelete()" class="border border-fail text-fail text-sm px-5 rounded-xl">Delete list</button>
+      </div>
+    </div>`;
+  show(fs);
+}
 function dutyEditOpen(list){
   _dutyEdit = {
-    list,
+    list, dirty:false,
     tasks: (S.dutyLists || []).filter(r => r.list === list).sort((a,b) => a.order - b.order)
       .map(r => ({ task: r.task, days: Array.isArray(r.days) ? r.days.join('|') : String(r.days||'') }))
   };
-  dutyEditorRedraw();
+  renderDutyEditorFS();
 }
 async function dutyEditNew(){
   const name = await appPrompt({ title:'New checklist', message:'Name it the way the team will read it, like "Runner Opening".', placeholder:'Checklist name', confirmLabel:'Create' });
   if(!name) return;
   if(dutyListNames().some(n => n.toLowerCase() === name.toLowerCase())){ toast('That checklist already exists.', 'error'); return; }
-  _dutyEdit = { list: name, tasks: [] };
-  dutyEditorRedraw();
+  _dutyEdit = { list: name, tasks: [], dirty:true };
+  renderDutyEditorFS();
 }
-function dutyEditAdd(){ _dutyEdit.tasks.push({ task:'', days:'' }); dutyEditorRedraw(); }
-function dutyEditRemove(i){ _dutyEdit.tasks.splice(i,1); dutyEditorRedraw(); }
-function dutyEditMove(i,dir){
-  const t = _dutyEdit.tasks, j = i + dir;
-  if(j < 0 || j >= t.length) return;
-  [t[i], t[j]] = [t[j], t[i]];
-  dutyEditorRedraw();
+async function dutyEditClose(){
+  if(_dutyEdit && _dutyEdit.dirty){
+    const yes = await appConfirm({ title:'Close without saving?', message:'Your edits to this checklist will be lost.',
+      confirmLabel:'Close without saving', cancelLabel:'Keep editing' });
+    if(!yes) return;
+  }
+  _dutyEdit = null;
+  renderDutyEditorFS();
+}
+function dutyEditAdd(){ _dutyEdit.tasks.push({ task:'', days:'' }); _dutyEdit.dirty = true; renderDutyEditorFS(); }
+function dutyEditRemove(i){ _dutyEdit.tasks.splice(i,1); _dutyEdit.dirty = true; renderDutyEditorFS(); }
+
+/* ---- Grab-and-drag reordering (pointer events, works with touch) ---------- */
+let _dutyDrag = null;
+function dutyDragStart(ev, i){
+  ev.preventDefault();
+  const row = $('dutyRow_' + i);
+  if(!row) return;
+  _dutyDrag = { row };
+  row.classList.add('dragging');
+  try { ev.target.setPointerCapture(ev.pointerId); } catch(e){ /* capture is a nicety */ }
+  document.addEventListener('pointermove', dutyDragMove);
+  document.addEventListener('pointerup', dutyDragEnd);
+  document.addEventListener('pointercancel', dutyDragEnd);
+}
+function dutyDragMove(ev){
+  if(!_dutyDrag) return;
+  const box = $('dutyEditRows'); if(!box) return;
+  const y = ev.clientY;
+  // Slide the row to wherever the finger is: insert before the first row
+  // whose midpoint is below the pointer.
+  let before = null;
+  for(const r of box.children){
+    if(r === _dutyDrag.row) continue;
+    const rect = r.getBoundingClientRect();
+    if(y < rect.top + rect.height / 2){ before = r; break; }
+  }
+  if(before) box.insertBefore(_dutyDrag.row, before);
+  else box.appendChild(_dutyDrag.row);
+}
+function dutyDragEnd(){
+  if(!_dutyDrag) return;
+  _dutyDrag.row.classList.remove('dragging');
+  document.removeEventListener('pointermove', dutyDragMove);
+  document.removeEventListener('pointerup', dutyDragEnd);
+  document.removeEventListener('pointercancel', dutyDragEnd);
+  _dutyDrag = null;
+  // Commit the DOM order back into the task array, then re-render so row
+  // indices and input handlers line up again.
+  const box = $('dutyEditRows');
+  if(box && _dutyEdit){
+    const order = [...box.children].map(r => Number(r.dataset.idx)).filter(n => !isNaN(n));
+    if(order.length === _dutyEdit.tasks.length){
+      _dutyEdit.tasks = order.map(i => _dutyEdit.tasks[i]);
+      _dutyEdit.dirty = true;
+    }
+    renderDutyEditorFS();
+  }
 }
 async function dutyEditSave(){
   const d = _dutyEdit;
@@ -3834,7 +3898,7 @@ async function dutyEditSave(){
     S.dutyLists = (S.dutyLists || []).filter(x => x.list !== d.list)
       .concat(tasks.map((t,i) => ({ list:d.list, order:i+1, task:t.task, days: t.days ? t.days.split('|').map(s=>s.trim()).filter(Boolean) : [] })));
     _dutyEdit = null;
-    dutyEditorRedraw();
+    renderDutyEditorFS();
     toast('Checklist saved.');
   } catch(e){ hideLoader(); appAlert('Connection error. Nothing was changed. Try again.', 'Save failed'); }
 }
@@ -3850,7 +3914,7 @@ async function dutyEditDelete(){
     if(!r.ok){ appAlert(r.error || 'Could not delete.', 'Delete failed'); return; }
     S.dutyLists = (S.dutyLists || []).filter(x => x.list !== d.list);
     _dutyEdit = null;
-    dutyEditorRedraw();
+    renderDutyEditorFS();
     toast('Checklist deleted.');
   } catch(e){ hideLoader(); appAlert('Connection error. Nothing was changed. Try again.', 'Delete failed'); }
 }

@@ -14,11 +14,10 @@
 //
 // Bump CACHE_NAME on every release that changes cached files.
 
-const CACHE_NAME = 'bonsake-v17';
+const CACHE_NAME = 'bonsake-v17-1';
 const SHELL = [
   '/',
   '/logo.png',
-  '/manifest.json',
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/icon-maskable-192.png',
@@ -44,6 +43,9 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;                 // writes pass through untouched
   if (url.hostname.indexOf('script.google.com') !== -1 ||
       url.hostname.indexOf('googleusercontent.com') !== -1) return;  // live API, never cached
+  // The manifest decides how Android installs the app — always fetch it
+  // fresh so install checks never see a stale copy.
+  if (url.pathname === '/manifest.json') return;
 
   // Navigations: freshest page wins, cached page saves an offline open.
   if (event.request.mode === 'navigate') {

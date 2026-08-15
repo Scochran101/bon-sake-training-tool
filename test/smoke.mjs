@@ -55,7 +55,8 @@ const mustExist = [
   'dutyEditOpen','dutyEditSave','teamCacheLoad','adminToggleLb',
   'sectionCardLabel','wineTypeOf','wineTypes','renderWineTypes','studyBackToGroups',
   'doLoginByPin','finishLogin','afterLogin','showPinChange','submitNewPin','tryOfflineLoginByPin','showLoginNames',
-  'renderDutyEditorFS','dutyEditClose','dutyDragStart','dutyDragMove','dutyDragEnd'
+  'renderDutyEditorFS','dutyEditClose','dutyDragStart','dutyDragMove','dutyDragEnd',
+  'progressBoardsHtml','loadProgressBoards','fillProgressBoards'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

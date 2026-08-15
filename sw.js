@@ -14,7 +14,7 @@
 //
 // Bump CACHE_NAME on every release that changes cached files.
 
-const CACHE_NAME = 'bonsake-v16';
+const CACHE_NAME = 'bonsake-v17';
 const SHELL = [
   '/',
   '/logo.png',

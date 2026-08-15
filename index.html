@@ -164,7 +164,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v16</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v17</p>
   </div>
 </section>
 
@@ -294,7 +294,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 16;           // shown on the login screen; bump with each release
+const APP_VERSION = 17;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -3457,7 +3457,6 @@ function openStudyItem(itemId){
 let progressView = 'me';  // 'me' | 'leaderboard'
 
 function renderProgress(){
-  if(progressView === 'leaderboard') return renderLeaderboard();
   // Managers land on the team view: their Progress is the TEAM's progress.
   if(progressView === 'team' && isManager()) return renderTeamProgress();
   const pane = $('tab-progress');
@@ -3590,10 +3589,7 @@ function renderProgress(){
       ${statCard('Overall Score', avg==null?'-':avg+'%')}
     </div>
 
-    <button onclick="toggleLeaderboard()" class="w-full flex items-center justify-between bg-surface border border-gold/60 rounded-xl px-4 py-3 mb-3 hover:border-gold transition-colors">
-      <span class="text-sm text-gold font-semibold">🏆 Leaderboard</span>
-      <span class="text-xs text-muted">See where you rank →</span>
-    </button>
+    ${progressBoardsHtml()}
 
     ${runHtml}
     ${gateHtml}
@@ -3614,12 +3610,9 @@ function renderProgress(){
     <div class="mt-6 text-center">
       <button onclick="switchTab('test')" class="bg-gold text-bg font-semibold px-6 py-2.5 rounded-lg">Start New Test</button>
     </div>`;
+  loadProgressBoards();
 }
 
-function toggleLeaderboard(){
-  progressView = (progressView === 'leaderboard') ? (isManager() ? 'team' : 'me') : 'leaderboard';
-  renderProgress();
-}
 
 /* ===========================================================================
    TEAM TAB  (managers only) — combined roster + add / edit / remove members
@@ -4042,10 +4035,7 @@ function drawTeamProgress(d){
     </div>` : '';
 
   box.innerHTML = `
-    <button onclick="toggleLeaderboard()" class="w-full flex items-center justify-between bg-surface border border-gold/60 rounded-xl px-4 py-3 mb-3 hover:border-gold transition-colors">
-      <span class="text-sm text-gold font-semibold">🏆 Leaderboard</span>
-      <span class="text-xs text-muted">See the rankings →</span>
-    </button>
+    ${progressBoardsHtml()}
     ${adminHtml}
     ${accBox('Team Mastery', staff.length + ' member' + (staff.length===1?'':'s'), masteryRows, true)}
     ${accBox('Training Close-Outs', String(tlog.length || ''), tlogRows, false)}
@@ -4056,6 +4046,7 @@ function drawTeamProgress(d){
       <p class="text-xs uppercase tracking-wider text-golddim mt-4 mb-1">Tasted</p>
       ${tastedRows}`, false)}
     ${accBox('Left-Early Tests', String(abandoned.length || ''), abRows, false)}`;
+  loadProgressBoards();
 }
 
 async function adminToggleLb(on){
@@ -4212,36 +4203,91 @@ async function teamRemove(i){
   } catch(e){ hideLoader(); appAlert('Connection error. Try again.', 'Remove failed'); }
 }
 
-async function renderLeaderboard(){
-  const pane = $('tab-progress');
-  pane.innerHTML = `<div class="flex items-center justify-between mb-4">
-      <h2 class="font-display text-2xl text-text">Leaderboard</h2>
-      <button onclick="toggleLeaderboard()" class="text-xs border border-line text-gold rounded-lg px-3 py-2">My Progress</button>
+/* ===========================================================================
+   THE TWO LEADERBOARDS (Progress tab)
+   Collapsed cards showing just the score; expanding reveals the full board.
+   Menu board = dishes mastered. Checklist board = manager-verified runs in
+   the last 30 days, plus the team streak.
+=========================================================================== */
+function progressBoardsHtml(){
+  const meNote = progressView === 'me' ? (masteredDishIds().size + ' dishes') : '…';
+  return accBox('🏆 Menu Leaderboard', `<span id="lbNote">${meNote}</span>`,
+      `<div id="lbBoardBody"><p class="text-muted text-sm">Loading…</p></div>`, false)
+    + accBox('✅ Checklist Leaderboard', `<span id="dbNote">…</span>`,
+      `<div id="dbBoardBody"><p class="text-muted text-sm">Loading…</p></div>`, false);
+}
+async function loadProgressBoards(){
+  // One fetch per five minutes: hopping between tabs shouldn't hammer Sheets.
+  if(!S._boards || Date.now() - S._boards.at > 300000){
+    try {
+      const [lb, db] = await Promise.all([apiGet('getLeaderboard'), apiGet('getDutyBoard')]);
+      S._boards = { at: Date.now(), lb, db };
+    } catch(e){
+      const msg = `<p class="text-fail text-sm">Couldn't load. Check your connection.</p>`;
+      const a = $('lbBoardBody'), b = $('dbBoardBody');
+      if(a) a.innerHTML = msg;
+      if(b) b.innerHTML = msg;
+      return;
+    }
+  }
+  fillProgressBoards();
+}
+function fillProgressBoards(){
+  const B = S._boards; if(!B || !S.user) return;
+  const me = (S.user.first_name + ' ' + S.user.last_name).toLowerCase();
+
+  // ---- Menu board ----
+  const rows = (B.lb && B.lb.leaderboard) || [];
+  const lbB = $('lbBoardBody');
+  if(lbB) lbB.innerHTML = rows.length ? `
+    <div class="overflow-x-auto"><table class="w-full text-sm text-left">
+      <thead><tr class="text-golddim text-xs uppercase tracking-wider">
+        <th class="pb-2 pr-2 font-medium">#</th><th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Mastered</th><th class="pb-2 pr-2 font-medium">Learning</th><th class="pb-2 font-medium">Last Active</th>
+      </tr></thead>
+      <tbody>${rows.map((row,i) => {
+        const mine = row.name.toLowerCase() === me;
+        return `<tr class="border-b border-line ${mine?'bg-gold/10':''}">
+          <td class="py-2 pr-2 ${mine?'text-gold':'text-muted'}">${i+1}</td>
+          <td class="py-2 pr-2 ${mine?'text-gold font-semibold':'text-text'}">${esc(row.name)}</td>
+          <td class="py-2 pr-2 text-text font-semibold">${row.dishes_mastered||0}</td>
+          <td class="py-2 pr-2 text-muted">${row.dishes_learning||0}</td>
+          <td class="py-2 text-muted whitespace-nowrap">${fmtDate(row.last_active)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>` : `<p class="text-muted text-sm">No dishes mastered yet. Be the first: pass both levels on any dish.</p>`;
+  const lbNote = $('lbNote');
+  if(lbNote){
+    const myIdx = rows.findIndex(r => r.name.toLowerCase() === me);
+    if(progressView === 'me') lbNote.textContent = myIdx !== -1
+      ? ('#' + (myIdx+1) + ' · ' + (rows[myIdx].dishes_mastered||0) + ' dishes')
+      : (masteredDishIds().size + ' dishes');
+    else lbNote.textContent = rows.length ? ('Leader: ' + rows[0].name + ' · ' + (rows[0].dishes_mastered||0)) : 'No entries yet';
+  }
+
+  // ---- Checklist board ----
+  const d = B.db || {};
+  const board = d.board || [];
+  const streak = Number(d.streak || 0);
+  const dbB = $('dbBoardBody');
+  if(dbB) dbB.innerHTML = `
+    <div class="text-center mb-4">
+      <p class="font-display text-5xl text-pass leading-none">${streak}</p>
+      <p class="text-xs text-muted mt-1">day${streak===1?'':'s'} in a row the team finished and verified every checklist</p>
     </div>
-    <div id="lbBody" class="bg-surface border border-line rounded-xl p-4"><p class="text-muted text-sm">Loading leaderboard…</p></div>`;
-  try {
-    const r = await apiGet('getLeaderboard');
-    const rows = (r.leaderboard||[]);
-    const me = (S.user.first_name + ' ' + S.user.last_name).toLowerCase();
-    const html = rows.length ? `
-      <table class="w-full text-sm text-left">
-        <thead><tr class="text-golddim text-xs uppercase tracking-wider">
-          <th class="pb-2 pr-2 font-medium">#</th><th class="pb-2 pr-2 font-medium">Name</th><th class="pb-2 pr-2 font-medium">Mastered</th><th class="pb-2 pr-2 font-medium">Learning</th><th class="pb-2 font-medium">Last Active</th>
-        </tr></thead>
-        <tbody>${rows.map((row,i) => {
-          const mine = row.name.toLowerCase()===me;
-          return `<tr class="border-b border-line ${mine?'bg-gold/10':''}">
-            <td class="py-2 pr-2 ${mine?'text-gold':'text-muted'}">${i+1}</td>
-            <td class="py-2 pr-2 ${mine?'text-gold font-semibold':'text-text'}">${esc(row.name)}</td>
-            <td class="py-2 pr-2 text-text font-semibold">${row.dishes_mastered||0}</td>
-            <td class="py-2 pr-2 text-muted">${row.dishes_learning||0}</td>
-            <td class="py-2 text-muted whitespace-nowrap">${fmtDate(row.last_active)}</td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table>` : `<p class="text-muted text-sm">No dishes mastered yet. Be the first: pass both levels on any dish.</p>`;
-    $('lbBody').innerHTML = html;
-  } catch(err){
-    $('lbBody').innerHTML = `<p class="text-fail text-sm">Couldn't load the leaderboard. Check your connection.</p>`;
+    ${board.length ? board.map((r,i) => {
+      const mine = r.name.toLowerCase() === me;
+      return `<div class="flex items-center justify-between py-2 border-b border-line last:border-0 ${mine?'bg-gold/10 rounded px-2':''}">
+        <span class="text-sm ${mine?'text-gold font-semibold':'text-text'}">${i+1}. ${esc(r.name)}</span>
+        <span class="text-sm text-text font-semibold">${r.count}</span>
+      </div>`;
+    }).join('') : `<p class="text-muted text-sm">No verified checklists in the last 30 days yet. Finish one and have a manager verify it.</p>`}
+    <p class="text-xs text-muted mt-3">Counts manager-verified checklists from the last 30 days. Split checklists count for everyone who shared the work.</p>`;
+  const dbNote = $('dbNote');
+  if(dbNote){
+    const mine = board.find(r => r.name.toLowerCase() === me);
+    dbNote.textContent = progressView === 'me'
+      ? ('You: ' + (mine ? mine.count : 0) + ' · Streak: ' + streak)
+      : ('Streak: ' + streak + ' day' + (streak===1?'':'s'));
   }
 }
 

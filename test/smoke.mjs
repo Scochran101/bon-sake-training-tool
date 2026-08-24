@@ -88,5 +88,30 @@ w.localStorage.removeItem('bonsake_outbox');
 w.outboxAdd({ action:'test' }, 'ci');
 ok('outbox persists', JSON.parse(w.localStorage.getItem('bonsake_outbox')).length === 1);
 
+// ---- 4) Stylesheet coverage + old-browser guard ---------------------------
+// The app ships a pre-built stylesheet (styles.css). If index.html gains a
+// style class the stylesheet doesn't contain, this fails the build: the fix
+// is to regenerate via tools/regen-styles.html and commit the result.
+console.log('4) Stylesheet coverage and old-browser guard');
+const css = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+const classAttrs = [...html.matchAll(/class="([^"]*)"/g)].map(m => m[1]).join(' ');
+const listCalls = [...html.matchAll(/classList\.(?:add|remove|toggle)\(([^)]*)\)/g)]
+  .map(m => [...m[1].matchAll(/'([^']+)'/g)].map(x => x[1]).join(' ')).join(' ');
+const clsTokens = [...new Set((classAttrs + ' ' + listCalls).split(/\s+/))]
+  .map(t => t.replace(/\$\{[^}]*\}/g, '').trim())
+  .filter(t => t && /^[a-zA-Z0-9:\[\]\/.#%-]+$/.test(t) && /[a-z]/.test(t));
+// The app's own hand-written classes live in index.html's <style>, not styles.css.
+const OWN = ['pin-mask','flip-card','flip-inner','flip-face','flip-back','flipped','fade-in','spin','no-scrollbar',
+  'tp-sel','tbl-pulse','dragging','acc','acc-chev','floorTile','floorMark','hidden','tabBtn','dtTable',
+  'drRoom','tpTable','mcqOpt','saOpt','qpOpt','wbSlot','rcSlot','tpChip','wbChip','addJob'];
+const cssEscape = t => t.replace(/[:\[\]/.#%]/g, c => '\\' + c);
+const missingCls = clsTokens.filter(t =>
+  OWN.indexOf(t) === -1 && css.indexOf('.' + cssEscape(t)) === -1);
+ok('every style class exists in styles.css', missingCls.length === 0, missingCls.slice(0, 12).join(' '));
+// Compatibility floor: the app supports browsers as old as a 2013 iPad
+// (iOS 12), which predates optional chaining and nullish coalescing.
+ok('no optional chaining (?.)', !/[\w)\]]\?\.[\w[$]/.test(html));
+ok('no nullish coalescing (??)', html.indexOf('??') === -1);
+
 console.log(failures ? failures + ' FAILURE(S)' : 'All checks passed');
 process.exit(failures ? 1 : 0);

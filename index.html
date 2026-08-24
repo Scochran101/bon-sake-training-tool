@@ -10,33 +10,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Shippori+Mincho:wght@500;600;700;800&display=swap" rel="stylesheet">
 
-<!-- Tailwind -->
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  tailwind.config = {
-    theme: {
-      extend: {
-        colors: {
-          bg:      '#0A0A0A',
-          surface: '#141414',
-          nav:     '#1A1A1A',
-          line:    '#2A2A2A',
-          gold:    '#C9A84C',
-          golddim: '#8A6E2F',
-          text:    '#D4CFC7',
-          muted:   '#888888',
-          chip:    '#1F1F1F',
-          pass:    '#27AE60',
-          fail:    '#C0392B'
-        },
-        fontFamily: {
-          display: ['"Shippori Mincho"', 'serif'],
-          body:    ['Inter', 'system-ui', 'sans-serif']
-        }
-      }
-    }
-  }
-</script>
+<!-- Styles: pre-built at release time (see tools/regen-styles.html), so no
+     in-browser compiler and no CDN dependency. Works on browsers as old as
+     a 2013 iPad. Custom colors/fonts live in tools/regen-styles.html. -->
+<link rel="stylesheet" href="/styles.css">
+
+<style>
+  /* Safety net: if the stylesheet ever fails to load, screens must still
+     never stack. Identical to the stylesheet's rule, so it can never
+     conflict; it only matters when the stylesheet is absent. */
+  .hidden { display: none !important; }
+</style>
 
 <style>
   html, body { background:#0A0A0A; }
@@ -164,7 +148,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v17</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v18</p>
   </div>
 </section>
 
@@ -294,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 17;           // shown on the login screen; bump with each release
+const APP_VERSION = 18;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -545,6 +529,12 @@ async function apiPost(data){
 =========================================================================== */
 const FETCH_TIMEOUT_MS = 20000;
 async function fetchJson(url, opts){
+  // Very old Safari (iPadOS 12 and earlier) lacks AbortController; degrade
+  // to a plain fetch there rather than blocking sign-in entirely.
+  if(typeof AbortController === 'undefined'){
+    const res = await fetch(url, opts);
+    return res.json();
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -1932,7 +1922,9 @@ function renderDutySection(){
       <button data-dr="${esc(room)}" onclick="dutyToggleRoom(this)"
         class="drRoom text-xs border border-line text-muted rounded-lg px-3 py-1.5 transition-colors">Whole room</button>
     </div>
-    <div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="aspect-ratio:4/5;max-width:420px;margin:0 auto;">
+    <div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="max-width:420px;margin:0 auto;">
+      <div style="padding-top:125%"></div>
+      <div class="absolute inset-0">
       ${roomTables(room).map(t => {
         if((t.kind || 'table') !== 'table') return markerTile(t);
         const shape = t.shape === 'round' ? 'rounded-full' : 'rounded-md';
@@ -1940,6 +1932,7 @@ function renderDutySection(){
           class="dtTable absolute flex items-center justify-center text-xs sm:text-sm font-semibold border border-line bg-chip text-text ${shape}"
           style="left:${t.x}%;top:${t.y}%;width:${t.w}%;height:${t.h}%;">${esc(t.table)}</button>`;
       }).join('')}
+      </div>
     </div>`).join('');
   $('tab-duties').innerHTML = `
     <button onclick="renderDutySplit()" class="text-gold text-sm mb-3">&larr; Back</button>
@@ -2460,7 +2453,12 @@ function renderRoomMap(room, opts){
     return `<div class="floorTile absolute flex items-center justify-center text-xs sm:text-sm font-semibold border border-line bg-chip text-text ${shape}"
       style="${pos}">${label}</div>`;
   }).join('');
-  return `<div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="aspect-ratio:4/5;max-width:520px;margin:0 auto;">${tiles}</div>`;
+  // The padding-top trick sizes the 4:5 map box on every browser; the
+  // aspect-ratio property alone needs iPadOS 15+.
+  return `<div class="relative w-full bg-bg border border-line rounded-xl overflow-hidden" style="max-width:520px;margin:0 auto;">
+    <div style="padding-top:125%"></div>
+    <div class="absolute inset-0">${tiles}</div>
+  </div>`;
 }
 
 function renderFloor(){
@@ -3778,7 +3776,7 @@ function renderDutyEditorFS(){
   if(!d){ hide(fs); fs.innerHTML = ''; dutyEditorRedraw(); return; }
   const rows = d.tasks.map((t,i) => `
     <div id="dutyRow_${i}" data-idx="${i}" class="flex items-center gap-2 mb-2 bg-surface border border-line rounded-xl p-2 transition-colors">
-      <span onpointerdown="dutyDragStart(event, ${i})" aria-label="Drag to reorder" role="button"
+      <span onpointerdown="dutyDragStart(event, ${i})" ontouchstart="dutyDragTouchStart(event, ${i})" aria-label="Drag to reorder" role="button"
         class="cursor-grab text-muted text-2xl leading-none px-2 py-3 select-none flex-shrink-0" style="touch-action:none">⠿</span>
       <input value="${esc(t.task)}" oninput="_dutyEdit.tasks[${i}].task=this.value;_dutyEdit.dirty=true"
         class="flex-1 bg-bg border border-line rounded-lg px-3 py-3 text-base text-text min-w-0 focus:border-gold focus:outline-none" />
@@ -3830,23 +3828,49 @@ async function dutyEditClose(){
 function dutyEditAdd(){ _dutyEdit.tasks.push({ task:'', days:'' }); _dutyEdit.dirty = true; renderDutyEditorFS(); }
 function dutyEditRemove(i){ _dutyEdit.tasks.splice(i,1); _dutyEdit.dirty = true; renderDutyEditorFS(); }
 
-/* ---- Grab-and-drag reordering (pointer events, works with touch) ---------- */
+/* ---- Grab-and-drag reordering ---------------------------------------------
+   Pointer events on modern browsers; a parallel touch path covers old
+   Safari (iPadOS 12 has no pointer events). Only one path ever runs. */
 let _dutyDrag = null;
-function dutyDragStart(ev, i){
-  ev.preventDefault();
+function dutyDragBegin(i){
   const row = $('dutyRow_' + i);
-  if(!row) return;
+  if(!row) return false;
   _dutyDrag = { row };
   row.classList.add('dragging');
+  return true;
+}
+function dutyDragStart(ev, i){
+  ev.preventDefault();
+  if(!dutyDragBegin(i)) return;
   try { ev.target.setPointerCapture(ev.pointerId); } catch(e){ /* capture is a nicety */ }
   document.addEventListener('pointermove', dutyDragMove);
   document.addEventListener('pointerup', dutyDragEnd);
   document.addEventListener('pointercancel', dutyDragEnd);
 }
+function dutyDragTouchStart(ev, i){
+  if(window.PointerEvent) return;   // modern browsers use the pointer path
+  ev.preventDefault();
+  if(!dutyDragBegin(i)) return;
+  document.addEventListener('touchmove', dutyDragTouchMove, { passive:false });
+  document.addEventListener('touchend', dutyDragTouchEnd);
+  document.addEventListener('touchcancel', dutyDragTouchEnd);
+}
+function dutyDragTouchMove(ev){
+  ev.preventDefault();   // the finger is dragging a row, not scrolling
+  if(ev.touches && ev.touches.length) dutyDragMoveAt(ev.touches[0].clientY);
+}
+function dutyDragTouchEnd(){
+  document.removeEventListener('touchmove', dutyDragTouchMove);
+  document.removeEventListener('touchend', dutyDragTouchEnd);
+  document.removeEventListener('touchcancel', dutyDragTouchEnd);
+  dutyDragCommit();
+}
 function dutyDragMove(ev){
+  dutyDragMoveAt(ev.clientY);
+}
+function dutyDragMoveAt(y){
   if(!_dutyDrag) return;
   const box = $('dutyEditRows'); if(!box) return;
-  const y = ev.clientY;
   // Slide the row to wherever the finger is: insert before the first row
   // whose midpoint is below the pointer.
   let before = null;
@@ -3859,14 +3883,17 @@ function dutyDragMove(ev){
   else box.appendChild(_dutyDrag.row);
 }
 function dutyDragEnd(){
-  if(!_dutyDrag) return;
-  _dutyDrag.row.classList.remove('dragging');
   document.removeEventListener('pointermove', dutyDragMove);
   document.removeEventListener('pointerup', dutyDragEnd);
   document.removeEventListener('pointercancel', dutyDragEnd);
+  dutyDragCommit();
+}
+// Commit the DOM order back into the task array, then re-render so row
+// indices and input handlers line up again.
+function dutyDragCommit(){
+  if(!_dutyDrag) return;
+  _dutyDrag.row.classList.remove('dragging');
   _dutyDrag = null;
-  // Commit the DOM order back into the task array, then re-render so row
-  // indices and input handlers line up again.
   const box = $('dutyEditRows');
   if(box && _dutyEdit){
     const order = [...box.children].map(r => Number(r.dataset.idx)).filter(n => !isNaN(n));

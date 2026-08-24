@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Bon Sake — rebuild styles.css</title>
+<!-- Developer tool, never shipped to users' flows.
+     WHEN TO USE: any release where index.html gains new style classes.
+     HOW: start the preview server (.claude/serve.ps1, or `preview_start static`),
+     open http://localhost:<port>/tools/regen-styles.html in a MODERN browser,
+     and it fetches index.html, compiles every class with the same Tailwind
+     config the app was designed with, and saves the result to /styles.css
+     via the server's /save-styles endpoint. Then commit styles.css.
+     The custom theme below is the single source of truth for app colors. -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          bg:      '#0A0A0A',
+          surface: '#141414',
+          nav:     '#1A1A1A',
+          line:    '#2A2A2A',
+          gold:    '#C9A84C',
+          golddim: '#8A6E2F',
+          text:    '#D4CFC7',
+          muted:   '#888888',
+          chip:    '#1F1F1F',
+          pass:    '#27AE60',
+          fail:    '#C0392B'
+        },
+        fontFamily: {
+          display: ['"Shippori Mincho"', 'serif'],
+          body:    ['Inter', 'system-ui', 'sans-serif']
+        }
+      }
+    }
+  }
+</script>
+</head>
+<body style="font-family:monospace;padding:2rem;background:#111;color:#ddd">
+<h1>Rebuilding styles.css…</h1>
+<pre id="log"></pre>
+<script>
+(async () => {
+  const log = m => document.getElementById('log').textContent += m + '\n';
+  try {
+    const src = await fetch('/index.html').then(r => r.text());
+    const raw = src.match(/[\w\-\[\]\/\.:#%]+/g) || [];
+    const tokens = [...new Set(raw)].filter(t =>
+      /[a-z]/.test(t) && t.length > 1 && t.length < 60 && /^[a-zA-Z\-0-9:.\[\]\/#%]+$/.test(t));
+    log('candidate tokens: ' + tokens.length);
+    const holder = document.createElement('div');
+    holder.style.display = 'none';
+    for (let i = 0; i < tokens.length; i += 200) {
+      const d = document.createElement('div');
+      d.setAttribute('class', tokens.slice(i, i + 200).join(' '));
+      holder.appendChild(d);
+    }
+    document.body.appendChild(holder);
+    await new Promise(r => setTimeout(r, 3000));
+    const css = [...document.querySelectorAll('style')]
+      .map(s => s.textContent)
+      .filter(t => t.indexOf('--tw-') !== -1 || t.length > 5000)
+      .join('\n');
+    log('generated CSS: ' + css.length + ' chars');
+    const header = '/* Bon Sake app stylesheet - generated from Tailwind v3 (Play CDN JIT).\n' +
+      '   REGENERATE whenever index.html gains new style classes: open tools/regen-styles.html\n' +
+      '   through the preview server and it rebuilds + saves this file. Then commit it. */\n';
+    const resp = await fetch('/save-styles', { method: 'POST', body: header + css });
+    log('saved: ' + await resp.text());
+    log('DONE. Commit styles.css with your release.');
+  } catch (e) {
+    log('FAILED: ' + e.message + '\n(Is the preview server running with the /save-styles endpoint?)');
+  }
+})();
+</script>
+</body>
+</html>

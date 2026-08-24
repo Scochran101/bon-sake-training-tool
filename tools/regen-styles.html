@@ -45,7 +45,9 @@
 (async () => {
   const log = m => document.getElementById('log').textContent += m + '\n';
   try {
-    const src = await fetch('/index.html').then(r => r.text());
+    // Cache-bust so the app's service worker can never serve a stale copy
+    // of index.html to the harvest.
+    const src = await fetch('/index.html?regen=' + Date.now()).then(r => r.text());
     const raw = src.match(/[\w\-\[\]\/\.:#%]+/g) || [];
     const tokens = [...new Set(raw)].filter(t =>
       /[a-z]/.test(t) && t.length > 1 && t.length < 60 && /^[a-zA-Z\-0-9:.\[\]\/#%]+$/.test(t));
@@ -59,11 +61,15 @@
     }
     document.body.appendChild(holder);
     await new Promise(r => setTimeout(r, 3000));
-    const css = [...document.querySelectorAll('style')]
+    let css = [...document.querySelectorAll('style')]
       .map(s => s.textContent)
       .filter(t => t.indexOf('--tw-') !== -1 || t.length > 5000)
       .join('\n');
-    log('generated CSS: ' + css.length + ' chars');
+    // Compatibility floor (iOS 12 Safari): the `inset` shorthand only landed
+    // in Safari 14.5, and without it every overlay renders invisible.
+    // Expand it to the longhand that every browser understands.
+    css = css.replace(/inset:0px/g, 'top:0px;right:0px;bottom:0px;left:0px');
+    log('generated CSS: ' + css.length + ' chars (inset shorthand expanded)');
     const header = '/* Bon Sake app stylesheet - generated from Tailwind v3 (Play CDN JIT).\n' +
       '   REGENERATE whenever index.html gains new style classes: open tools/regen-styles.html\n' +
       '   through the preview server and it rebuilds + saves this file. Then commit it. */\n';

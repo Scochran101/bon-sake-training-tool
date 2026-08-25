@@ -149,7 +149,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v19</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v20</p>
   </div>
 </section>
 
@@ -279,7 +279,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 19;           // shown on the login screen; bump with each release
+const APP_VERSION = 20;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -414,7 +414,7 @@ const SECTIONS = [
   'All Items','Signature Maki','Signature Sashimi','Signature Nigiri','Uramaki & Temaki',
   'Hosomaki','Nigiri & Sashimi','Sushi Small Plates','Sushi Starters','Small Plates',
   'Soups & Salads','Large Plates','Yaki — From the Grill',
-  'Signature Cocktails','Mocktails','Beers & Seltzers','Menu Terms'
+  'Signature Cocktails','Mocktails','Beers & Seltzers','Bar Prep','Menu Terms'
 ];
 
 // ---- Test tracks (Service Skills; dish tests come from the menu itself) ----
@@ -428,7 +428,8 @@ const TRACKS = [
   { id:'tm_bar',      name:'🍹 Bartending Basics', type:'soon' }
 ];
 // Drink sections live in their own Test dropdown, away from the food.
-const BEV_SECTIONS = ['Signature Cocktails','Mocktails','Beers & Seltzers'];
+// Bar Prep = the batches, purees, and standards from the bar binder.
+const BEV_SECTIONS = ['Signature Cocktails','Mocktails','Beers & Seltzers','Bar Prep'];
 
 // Beers we do NOT serve, mixed into the Beer & Seltzer List test as decoys.
 const BEER_DECOYS = ['Corona Extra','Modelo Especial','Heineken','Blue Moon','Stella Artois','Guinness','Dos Equis','White Claw','Truly','Yuengling'];
@@ -1466,9 +1467,11 @@ function renderItemDetail(id){
     : '';
 
   // Optional sections — each appears ONLY when the Google Sheet has its data.
+  // Bar Prep pages show the recipe with quantities; menu items show the
+  // chef's pitch. Same field, different label.
   const sellHtml = it.sell_description
     ? `<div class="border-l-2 border-gold pl-4 py-1">
-         <p class="text-xs uppercase tracking-wider text-golddim mb-1">The House Pitch</p>
+         <p class="text-xs uppercase tracking-wider text-golddim mb-1">${it.section === 'Bar Prep' ? 'The Build' : 'The House Pitch'}</p>
          <p class="font-display italic text-text leading-relaxed">${esc(it.sell_description)}</p>
        </div>`
     : '';

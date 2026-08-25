@@ -279,7 +279,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 20;           // shown on the login screen; bump with each release
+const APP_VERSION = 21;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -305,10 +305,10 @@ const S = {
   floorBrowse: { room: null },   // selected room on the Floor tab
   dutyLists: [],         // Duty Checklists rows: { list, order, task, days }
   duty: null,            // active checklist run
-  curriculum: [],        // Training Curriculum rows: { week, day, title, content, trainer_notes }
+  manual: null,          // trainee manual from the four Manual sheet tabs (null until served)
   closeoutQs: [],        // end-of-day questions (editable in the sheet)
   trainerQs: [],         // trainer sign-off questions (editable in the sheet)
-  training: { week: null, day: null },   // selected week/day on the Training tab
+  training: { view: 'path', phase: null, sop: null, check: null, back: null, shiftClosing: 0 },
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
 };
@@ -829,6 +829,7 @@ async function finishLogin(r, pin){
 // until the backend serving it is deployed.
 function flashcards(){ return (S.flashcards && S.flashcards.length) ? S.flashcards : FLASHCARDS_BUILTIN; }
 function upsells(){ return (S.upsells && S.upsells.length) ? S.upsells : UPSELL_BUILTIN; }
+function manual(){ return (S.manual && S.manual.phases && S.manual.phases.length) ? S.manual : MANUAL_BUILTIN; }
 
 // Populates all menu-derived state from a getMenu payload (live or cached).
 function applyMenuPayload(m){
@@ -838,7 +839,7 @@ function applyMenuPayload(m){
   S.config = m.config || {};
   S.gates  = m.gates  || [];
   S.layout = m.layout || [];
-  S.curriculum = m.curriculum || [];
+  S.manual = m.manual || null;
   S.dutyLists  = m.dutyLists  || [];
   S.closeoutQs = m.closeoutQuestions || [];
   S.trainerQs  = m.trainerQuestions  || [];
@@ -1040,7 +1041,8 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   S.dishNotes = {}; S.testBrowse = { section:null }; S.floorBrowse = { room:null };
-  S.training = { week:null, day:null }; S.duty = null;
+  S.training = { view:'path', phase:null, sop:null, check:null, back:null, shiftClosing:0 };
+  S._practice = null; S._styleFill = {}; S.duty = null;
   _dutyJob = null; _dutyLists = []; _dutyParticipants = []; _dutySel = { rooms:[], tables:[] };
   clearTimeout(_idleTimer);
   progressView = 'me';
@@ -1207,7 +1209,8 @@ function switchTab(tab){
    remembered per device in localStorage, so each tip appears once. */
 const TAB_HINTS = {
   study: 'Tip: open any dish and scroll to "Your Words" to keep tasting notes and see how the team describes it.',
-  test:  'Tip: mastering dishes at Level 2 moves you up the leaderboard on the Progress tab.'
+  test:  'Tip: mastering dishes at Level 2 moves you up the leaderboard on the Progress tab.',
+  training: 'Tip: your Path tracks itself. Table tests, menu tests, and trainer checks light up here as you pass them.'
 };
 function hintSeen(tab){ try { return localStorage.getItem('bonsake_hint_' + tab) === '1'; } catch(e){ return true; } }
 function dismissHint(tab){
@@ -2203,29 +2206,401 @@ async function dutySubmit(){
 }
 
 /* ===========================================================================
-   TRAINING TAB (curriculum by week/day, daily close-out, trainer sign-off)
+   TRAINING TAB · THE PATH TO SERVING
+   The Server Trainee Manual as a living journey: three phases across eight
+   shifts, checkpoints tracked from real test results, a Handbook with
+   practice modes, and the daily close-out + trainer sign-off.
+   Content lives in four sheet tabs (Manual Phases, Manual SOPs, Steps of
+   Service, Manual Pages). This built-in copy is the fallback until the
+   backend serving it is deployed, and matches what the backend seeds.
 =========================================================================== */
-// The curriculum a viewer actually sees. Trainees get rows for their position
-// (plus rows with no position, which are for everyone). Trainers and managers
-// see everything, optionally narrowed by the position chips.
-function curricRows(){
-  const all = S.curriculum || [];
-  if(isTrainerUser()){
-    const pick = S.training.pos || '';
-    return pick ? all.filter(r => !r.position || r.position === pick) : all;
+const MANUAL_BUILTIN = {
+  phases: [
+    { order:1, title:'Bussing', shifts:'Shifts 1 to 3', principle:'Work As a Team',
+      job:['Water Within One Minute','Set Tables to the Standard','Clear Table with Open-Hand Service','Pre-Bussing & Table Upkeep','Run Opening & Closing Duty Lists','Learn your team: Who is who and Where things are'],
+      effect:['The room looks clean and ready.','Tables are kept clear of finished plates.','Guests feel anticipated and taken care of.','Tables turn faster without looking rushed.','You become a valuable team player.'],
+      tools:['Sanitizer rag','Dry rag','Bus tub','Tray','Broom & Dustpan'],
+      narrative:"You will learn how we set a table and why, how we clear with open-hand service, how water is poured and refilled, how a table gets wiped and turned, and the busser's opening and closing duties. You will work at your shift lead's direction, on their tables and on everybody's tables. We are always on stage: everyone else in the room is sitting down, we are the ones standing, and the way we handle an empty table shows a guest how their table was handled before they got there.\nWhen you can show the skills, a manager or shift lead runs the Busser Check on the floor, and you start running food." },
+    { order:2, title:'Running', shifts:'Shifts 4 to 6', principle:'Systems & Tools',
+      job:['Table Numbers & Sections','Reading the Tickets','Seat Numbers & Auctions','Running the Window','Timing of Two Kitchens','Start the POS'],
+      effect:["Food lands hot, right, and silent; nobody is asked whose plate this is.",'The table eats together instead of in shifts.',"The kitchen's work survives the last thirty feet.",'On the loudest nights, the system carries the room.'],
+      tools:['Tray','Side towel','Table & seat map','Pen'],
+      narrative:'Bussing does not stop when running starts; it is part of every job you will ever hold here. To finish running you pass the Table Test, a blank floor plan completed from memory, and the Runner Check on the floor. Then the Menu Test, built on your minimums, earns you tables.' },
+    { order:3, title:'First Section', shifts:'Shifts 7 to 8', principle:'The Experience Is The Product',
+      job:['Own a Section','Follow the Steps','Touring the Menu; Make Suggestions','Quality Checks','Ringing in Correctly'],
+      effect:['The guest gets a host for the evening, not an order-taker.','Decisions come easy, food lands right, and nobody waits wondering.',"The whole team's work reaches the guest through you.",'Nights like that make regulars, and regulars make the restaurant.'],
+      tools:['Server book & two pens/POS mobile','Wine key','Side towel'],
+      narrative:"Part of your first hour is spent at the host stand, because the host sets up everything you do. Your trainer stays beside you to support, with their attention on your salesmanship and your table upkeep. To finish, you pass the Server Skill Out, scored across seven categories at ninety percent or above, pass your trainer's evaluation, and set your selling goals: the dishes you intend to sell and how many, tracked with the team so we know when to help and when to celebrate.\nThen you are a server. Congratulations." }
+  ],
+  sops: [
+    { order:1, role:'Busser', title:'Setting a Table',
+      why:'The set table is the first thing an arriving guest inspects. A correct setting tells them the night was prepared before they walked in.',
+      when:'On the opening list before service, and at every turn, before the next party reaches the table.',
+      steps:['Clear the surface completely. Nothing from the previous party remains.','Wipe with the sanitizer rag, corner to corner, sweeping debris into the tray. Nothing reaches the floor.','Dry the surface with the dry rag.','Set the table to the standard.','Check the chairs and the floor beneath the table. Correct anything a guest would notice.'] },
+    { order:2, role:'Busser', title:'Clearing an Occupied Table',
+      why:'Finished plates crowd the meal and put the mess back in front of the guest. Quiet clearing keeps their view clean and their conversation unbroken.',
+      when:'All night, as plates empty. Pre-bus on every pass; a guest should never need to ask.',
+      steps:['Read the table before speaking. If conversation is running, work quietly around it.','Be friendly when you approach; use a pardon me or a may I; gesture toward the finished plates.','Clear with open-hand service: the hand furthest from the guest, never reaching across anyone.','Move plates straight off the table into the aisle, into the tray. Plates are never stacked on the table.',"The tray doesn't touch the table.",'Handle glasses at the bottom half only, never where mouths go.','Thank them when the moment allows it.'] },
+    { order:3, role:'Busser', title:'Turning a Table',
+      why:'Guests judge how their own table was treated by watching how an empty one is handled. A fast, correct turn also seats the next party sooner.',
+      when:'The moment a party departs. The turn takes priority over side work.',
+      steps:['Strip everything into empty hands or the tray, quick & quiet. No stacking on the table; no scraping in view of guests.','Wipe with the sanitizer rag, corner to corner, debris into the tray. Follow with the dry rag.','Reset the table to the standard. Check the chairs for debris.','Deliver the tray to the drop point.','Return with full hands: whatever else is finished nearby comes back with you.'] },
+    { order:4, role:'Busser', title:'Water',
+      why:'Water inside the first minute tells guests they were expected. Automatic refills with the glass on the table.',
+      when:'Within one minute of seating, and all night after: refill before a glass sits empty. Never pre-set on an empty table.',
+      steps:['Deliver water within one minute of seating. Smile as you pour; tell them their server is on the way.','Pour with open-hand service: the hand furthest from the guest, never reaching across anyone.','Refill in place. The glass never leaves the table.','Set every glass down gently, handled at the bottom half, never near where lips go.'] },
+    { order:5, role:'Runner', title:'Delivering Food & Beverage',
+      why:"The right plate landing in front of the right guest, without a word of auction, keeps the table's conversation whole and the food at its best.",
+      when:"Whenever the window holds ready food, whoever's table it is.",
+      steps:['Read the ticket before lifting the tray: the table number, then seat one.','Confirm the table by number on the way.','Serve seat one and clockwise from it. Each plate goes in front of the guest who ordered it; no one is asked whose food it is.',"Serve with open-hand service: to each guest's open side, with the hand furthest from them.",'Carry glasses low and handle them at the bottom; stemware is never touched at the bulb.','Return with full hands.'] }
+  ],
+  sos: [
+    { step:1,  title:'The Welcome',             detail:'Greeted at the door; Name the server.', owner:'Host' },
+    { step:2,  title:'The Seating',             detail:'A pulled chair; the server named again; gratitude.', owner:'Host' },
+    { step:3,  title:'The First Minute',        detail:'Water brought with a welcome; Excess plates cleared.', owner:'Busser · Runner' },
+    { step:4,  title:'The Server Introduction', detail:'Your name first; Ask about their last visit; Drink suggestions and orders taken; Mention a menu tour.', owner:'Server' },
+    { step:5,  title:'The Menu Tour',           detail:'Drinks brought; the appetizer tour, taste over ingredients; sell what you love.', owner:'Server' },
+    { step:6,  title:'The Apps Arrive',         detail:'No auction; Check drinks.', owner:'Runner · Server' },
+    { step:7,  title:'App Quality Check',       detail:'Two bites; Ask with high expectations; Entree suggestions.', owner:'Server' },
+    { step:8,  title:'The Entree Arrives',      detail:'No auction; checked the same way.', owner:'Runner · Server' },
+    { step:9,  title:'Entree Quality Check',    detail:'Two bites or one roll; Mention dessert.', owner:'Server' },
+    { step:10, title:'Dessert Offer',           detail:'Offer to-go if appropriate; dessert cocktails.', owner:'Server' },
+    { step:11, title:'The Check & Send-Off',    detail:'Service continues even after the check is paid; no rush.', owner:'Server → Host' }
+  ],
+  pages: [
+    { section:'principle', order:1, title:'Work As a Team', body:"The entire team works together for the guests and each other. From attitude to side work to table upkeep, everybody contributes so that we can all have a better night. We are always on stage for the people dining; who doesn't enjoy watching excellent teamwork?", note:'' },
+    { section:'principle', order:2, title:'Systems & Tools', body:'Every visit sets the expectation for the next visit, so we focus on consistency. We also need everyone on our team to know what to expect while they work. We have a way to do things and tools to get them done.', note:'' },
+    { section:'principle', order:3, title:'The Experience Is The Product', body:"Great food is everywhere; people return for great experiences. Everything from greeting to the goodbye is an opportunity to add to the experience. Everyone is a V.I.P. Our job is to handle everything, so they are free to enjoy each other's company.", note:'' },
+    { section:'method', order:1, title:'The First Hour', body:'You are scheduled for an hour before service. That hour belongs to you and the manager: learning and doing, with no guests in the building.', note:'' },
+    { section:'method', order:2, title:'Watch, Do, Show', body:'Your trainer does it while you watch. You do it while they watch. Then you show it back at the end of the shift, saying it and doing it.', note:'' },
+    { section:'method', order:3, title:'Fast Feedback', body:'Feedback comes immediately. Expect it and want it: it means you are doing a good job, not a bad one, and it makes you better faster. You never have to wonder where you stand.', note:'' },
+    { section:'method', order:4, title:'Revisit and Review', body:'Every first hour opens with the material from the shifts before it. We clear up questions from the previous day.', note:'' },
+    { section:'method', order:5, title:'Learning Your Sell', body:'You will learn to describe our food in a way that entices and fits your personality.', note:'' },
+    { section:'style_first', order:0, title:'You have thirty seconds to make a friend.', body:'', note:'' },
+    { section:'style_first', order:1, title:'Give your name when it can be heard', body:'The host has already said it twice; slight pause.', note:'' },
+    { section:'style_first', order:2, title:'Eye contact; Eye level', body:'Never talk into your book.', note:'' },
+    { section:'style_first', order:3, title:'Write it down', body:'It looks professional because it is.', note:'' },
+    { section:'style_first', order:4, title:'Names run both directions', body:'If a guest uses yours, you can ask for theirs.', note:'' },
+    { section:'style_first', order:5, title:'Compliment real things', body:'Their picks, their timing, their taste in restaurants.', note:'' },
+    { section:'style_first', order:6, title:'Look the part', body:'You are the packaging on everything the kitchen makes.', note:'' },
+    { section:'style_order', order:0, title:"Don't just take an order; Take a tour", body:'', note:'' },
+    { section:'style_order', order:1, title:'Open with a recommendation', body:'Assume the meal and go from there.', note:'' },
+    { section:'style_order', order:2, title:'Describe the taste, not the ingredients', body:'Sell the vacation, not the flight.', note:'' },
+    { section:'style_order', order:3, title:'Assume the sale', body:'Everything here is delicious; speak as though you expect them to say yes.', note:'' },
+    { section:'style_order', order:4, title:'Give specials a special description', body:'Never a recited list.', note:'' },
+    { section:'style_order', order:5, title:'Rate it', body:'They chose well; tell them so.', note:'' },
+    { section:'script', order:1, title:'Opening the Beverage', body:'"Is this a wine or cocktail kind of meal?"', note:'If wine: red or white, then your recommendation. If cocktail: two recommendations minimum. Read the table.' },
+    { section:'script', order:2, title:'Touring the Menu', body:'"Before anybody decides, I have got to tell you about the [DISH]."', note:'Point at it. Guests remember what you point to.' },
+    { section:'script', order:3, title:'The Quality Check', body:'"Is that [DISH] amazing or what?"', note:'Never ask if everything is okay. We aim much higher than okay.' },
+    { section:'script', order:4, title:'Dessert', body:'"Did I mention the [DESSERT]?"', note:'Name one. A general offer of dessert invites a general no.' },
+    { section:'upkeep', order:1, title:'Always On: Table Upkeep', body:'Anything the guests need. Refill water & soda without asking. Menu drinks are offered assuming the sale. Plates are picked up quickly. Anyone passing a table that needs something handles it; either themselves or with team help.', note:'' },
+    { section:'pos', order:1, title:'Start of Shift', body:'Clock in and out|Open a check|Find any item by tab or search', note:'' },
+    { section:'pos', order:2, title:'The Order', body:'Ring with seat numbers: seat one noted, clockwise, zero for a seat that did not order|Modify: requests, substitutions, allergies, coursing|Change an order after it has been sent|Fire a course; message the kitchen or sushi bar', note:'' },
+    { section:'pos', order:3, title:'Payment', body:'Split evenly, by seat, and across payment types|Take cash, card, mobile, gift card|Print itemized bills and receipts', note:'' },
+    { section:'pos', order:4, title:'End of Shift', body:'Adjust and enter tips|Close checks clean|Run the shift report and reconcile', note:'' },
+    { section:'floor', order:1, title:'The Floor', body:'The Table Test is a blank floor plan completed from memory: every table number, every room. The maps live in the Floor tab; study them until you can place every table without looking.', note:'' },
+    { section:'minimums', order:1, title:'Server Minimums', body:'Your minimums are the dish counts that earn you tables. They are tracked live below and on your Path; a manager sets the numbers.', note:'' },
+    { section:'problems', order:1, title:'The Top Table Problems', body:'Not every situation is identical, and the manager may call an audible for a reason. We still plan for eighty percent of things.', note:'' },
+    { section:'done', order:1, title:'What Done Means', body:"Every check passed, your trainer's evaluation passed, and your selling goals set and recorded. Your trainer and manager sign it because they watched you do it.\nThen you are a server. Congratulations.", note:'' }
+  ]
+};
+
+/* ---- Manual helpers ------------------------------------------------------ */
+function manualPages(section){ return manual().pages.filter(p => p.section === section); }
+// The phases this viewer walks: the server path runs through bussing and
+// running, so Server sees all three, Runner the first two, Busser the first.
+// Trainers and managers see everything as reference.
+function trainingPhases(){
+  const ph = manual().phases;
+  if(!S.user) return [];
+  if(String(S.user.training_for || '').toLowerCase() === 'server') return ph;
+  if(String(S.user.training_for || '').toLowerCase() === 'runner') return ph.filter(p => p.order <= 2);
+  if(String(S.user.training_for || '').toLowerCase() === 'busser') return ph.filter(p => p.order <= 1);
+  if(isTrainerUser()) return ph;
+  return [];   // e.g. Bartender: bar training runs with the trainer; Handbook still applies
+}
+function phaseSops(order){
+  const role = ({ 1:'busser', 2:'runner', 3:'server' })[order] || '';
+  return manual().sops.filter(s => String(s.role || '').toLowerCase() === role);
+}
+// On-floor checks a trainer records (test_type 'check' in Test Results).
+function checkPassed(id){
+  return S.results.some(r => String(r.test_type||'')==='check' && String(r.item_id||'')===id
+    && String(r.pass_fail).toUpperCase()==='PASS' && resultValid(r));
+}
+function checkDate(id){
+  let d = null;
+  S.results.forEach(r => {
+    if(String(r.test_type||'')!=='check' || String(r.item_id||'')!==id) return;
+    if(String(r.pass_fail).toUpperCase()!=='PASS') return;
+    const t = new Date(r.date_taken);
+    if(!isNaN(t) && (!d || t > d)) d = t;
+  });
+  return d;
+}
+// Everything a phase requires, with live status from the app's own records.
+function phaseCheckpoints(order){
+  const cps = [];
+  if(order === 1){
+    cps.push({ type:'check', id:'busser', label:'Busser Check', done:checkPassed('busser') });
+  } else if(order === 2){
+    const rf = runFoodProgress();
+    if(rf.rooms.length) cps.push({ type:'rooms', label:'Table Test', done:rf.allDone, count:rf.passed.length, total:rf.rooms.length, unit:'rooms' });
+    const gp = gateProgress();
+    if(gp.groups.length){
+      let c = 0, t = 0;
+      gp.groups.forEach(g => { c += g.count; t += g.required; });
+      cps.push({ type:'gates', label:'Menu Test', done:gp.allDone, count:c, total:t, unit:'dishes' });
+    }
+    cps.push({ type:'check', id:'runner', label:'Runner Check', done:checkPassed('runner') });
+  } else if(order === 3){
+    cps.push({ type:'check', id:'skillout', label:'Server Skill Out', done:checkPassed('skillout') });
   }
-  const mine = (S.user && S.user.training_for) || '';
-  return all.filter(r => !r.position || r.position === mine);
+  return cps;
 }
-function curricWeeks(){
-  const w = [];
-  curricRows().forEach(r => { if(w.indexOf(r.week) === -1) w.push(r.week); });
-  return w.sort((a,b) => a-b);
+function phaseComplete(order){
+  const cps = phaseCheckpoints(order);
+  return cps.length > 0 && cps.every(c => c.done);
 }
-function weekDays(week){
-  const d = [];
-  curricRows().forEach(r => { if(r.week === week && d.indexOf(r.day) === -1) d.push(r.day); });
-  return d.sort((a,b) => a-b);
+// Which training shift they are on: close-outs logged + 1. Null until the
+// backend that counts them is deployed, and the UI hides the number.
+function currentTrainingShift(){
+  if(!S.user || S.user.training_closeouts === undefined || S.user.training_closeouts === null) return null;
+  return Math.min(totalTrainingShifts(), Number(S.user.training_closeouts) + 1);
+}
+function totalTrainingShifts(){
+  let mx = 0;
+  manual().phases.forEach(p => {
+    (String(p.shifts).match(/\d+/g) || []).forEach(n => { mx = Math.max(mx, Number(n)); });
+  });
+  return mx || 8;
+}
+
+/* ---- Personal ticks (kept on this device, per person) -------------------- */
+function trUserKey(){ return S.user ? (S.user.first_name + '_' + S.user.last_name).toLowerCase() : 'anon'; }
+function trStoreKey(k){ return 'bonsake_train_' + trUserKey() + '_' + k; }
+function trChecks(k){
+  try { const a = JSON.parse(localStorage.getItem(trStoreKey(k)) || '[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function trToggleTask(k, i){
+  const a = trChecks(k);
+  a[i] = a[i] ? 0 : 1;
+  try { localStorage.setItem(trStoreKey(k), JSON.stringify(a)); } catch(e){}
+  renderTraining();
+}
+
+/* ---- Navigation ---------------------------------------------------------- */
+function trGo(view, arg, back){
+  S.training.view = view;
+  if(view === 'phase') S.training.phase = arg;
+  if(view === 'sop'){ S.training.sop = arg; S.training.back = back || 'sops'; }
+  if(view === 'check') S.training.check = arg;
+  renderTraining();
+  window.scrollTo(0, 0);
+}
+
+function renderTraining(){
+  const v = S.training.view || 'path';
+  if(v === 'how')      return trHow();
+  if(v === 'handbook') return trHandbook();
+  if(v === 'phase')    return trPhase();
+  if(v === 'sops')     return trSopList();
+  if(v === 'sop')      return trSop();
+  if(v === 'sopdrill') return trSopDrill();
+  if(v === 'sos')      return trSos();
+  if(v === 'sosquiz')  return trSosQuiz();
+  if(v === 'style')    return trStyle();
+  if(v === 'pos')      return trPos();
+  if(v === 'minimums') return trMinimums();
+  if(v === 'problems') return trProblems();
+  if(v === 'done')     return trDone();
+  if(v === 'check')    return trCheckFlow();
+  return trPath();
+}
+
+/* ---- Small shared pieces ------------------------------------------------- */
+function trBackBtn(label, view){
+  return `<button onclick="trGo('${view}')" class="text-gold text-sm mb-3">&larr; ${label}</button>`;
+}
+function trMeter(count, total){
+  const pct = total ? Math.round((count / total) * 100) : 0;
+  return `<div class="h-1.5 rounded-full bg-chip overflow-hidden"><div class="h-full bg-gold rounded-full" style="width:${pct}%"></div></div>`;
+}
+function trCpRows(cps, withActions){
+  return cps.map(c => {
+    if(c.type === 'check'){
+      if(c.done){
+        const d = checkDate(c.id);
+        const when = d ? ' · ' + d.toLocaleDateString(undefined, { month:'short', day:'numeric' }) : '';
+        return `<div class="flex items-center justify-between py-2 border-t border-line/50 first:border-t-0">
+          <span class="text-sm text-text">${esc(c.label)}</span>
+          <span class="text-xs text-pass font-medium">✓ Passed${when}</span></div>`;
+      }
+      return `<div class="flex items-center justify-between py-2 border-t border-line/50 first:border-t-0 gap-2">
+        <span class="text-sm text-text">${esc(c.label)}</span>
+        ${withActions ? `<button onclick="trGo('check','${c.id}')" class="text-xs text-gold border border-gold rounded-full px-3 py-1">Hand to your trainer →</button>`
+                      : `<span class="text-xs text-muted">with your trainer</span>`}</div>`;
+    }
+    const goTab = c.type === 'rooms' ? 'floor' : 'test';
+    const goLabel = c.type === 'rooms' ? 'Take the Table Test →' : 'Work on the Menu Test →';
+    return `<div class="py-2 border-t border-line/50 first:border-t-0">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-sm text-text">${esc(c.label)}</span>
+        <span class="text-xs ${c.done ? 'text-pass font-medium' : 'text-muted'}">${c.done ? '✓ Done' : c.count + ' of ' + c.total + ' ' + c.unit}</span>
+      </div>
+      ${trMeter(c.count, c.total)}
+      ${withActions && !c.done ? `<button onclick="switchTab('${goTab}')" class="mt-2 text-xs text-gold">${goLabel}</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ---- The Path (Training home) -------------------------------------------- */
+function trPath(){
+  const pane = $('tab-training');
+  const phases = trainingPhases();
+  const isTrainee = !!(S.user && S.user.training_for);
+  const shift = currentTrainingShift();
+  const readHow = !!localStorage.getItem(trStoreKey('read_how'));
+
+  // Current phase = the first one not yet complete (only meaningful for trainees).
+  let current = null;
+  if(isTrainee){
+    for(let i = 0; i < phases.length; i++){
+      if(!phaseComplete(phases[i].order)){ current = phases[i].order; break; }
+    }
+  }
+  const allDone = isTrainee && phases.length > 0 && current === null;
+
+  const sub = [];
+  if(isTrainee && S.user.training_for) sub.push('Training for ' + esc(S.user.training_for));
+  if(isTrainee && shift) sub.push('Shift ' + shift + ' of ' + totalTrainingShifts());
+  if(isTrainee && S.user.assigned_trainer) sub.push('with ' + esc(S.user.assigned_trainer));
+
+  const phaseCards = phases.map(p => {
+    const cps = phaseCheckpoints(p.order);
+    const done = isTrainee && cps.length > 0 && cps.every(c => c.done);
+    const isCurrent = isTrainee && p.order === current;
+    const status = !isTrainee ? '' :
+      done ? `<p class="text-xs text-pass font-medium mt-2">✓ Complete</p>` :
+      isCurrent ? `<div class="mt-3">${trCpRows(cps, false)}</div>
+        <div class="mt-3 w-full bg-gold text-bg font-semibold py-2.5 rounded-lg text-center text-sm">Continue · ${esc(p.title)} →</div>` :
+      `<p class="text-xs text-muted mt-2">Read ahead any time.</p>`;
+    return `<button onclick="trGo('phase',${p.order})" class="block w-full text-left bg-surface border ${isCurrent ? 'border-gold' : 'border-line'} rounded-xl p-4 ${(!isTrainee || done || isCurrent) ? '' : 'opacity-60'}">
+      <p class="text-xs uppercase tracking-wider text-golddim">${esc(p.shifts)} · ${esc(p.principle)}</p>
+      <p class="font-display text-xl text-text mt-0.5">${esc(p.title)}</p>
+      ${status}
+    </button>`;
+  }).join('');
+
+  const doneCard = allDone ? `<button onclick="trGo('done')" class="block w-full text-left bg-surface border border-gold rounded-xl p-4">
+    <p class="font-display text-xl text-pass">The Path is complete.</p>
+    <p class="text-sm text-muted mt-1">Every check passed. See what done means →</p>
+  </button>` : '';
+
+  const noPhaseNote = (!phases.length && isTrainee)
+    ? `<div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-sm text-text">Your ${esc(S.user.training_for)} training runs shift by shift with your trainer.</p>
+        <p class="text-xs text-muted mt-1">The Handbook below is your reference, and you still close out every training day here.</p></div>`
+    : '';
+
+  pane.innerHTML = `
+    <h2 class="font-display text-2xl text-text mb-1">Your Path to Serving</h2>
+    ${sub.length ? `<p class="text-muted text-sm mb-4">${sub.join(' · ')}</p>` : `<p class="text-muted text-sm mb-4">The trainee manual, live.</p>`}
+    <div class="space-y-3">
+      <button onclick="trGo('how')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
+        <div class="flex items-center justify-between">
+          <div><p class="text-sm text-text font-medium">How We Work</p>
+          <p class="text-xs text-muted mt-0.5">The Three Principles · Our Method</p></div>
+          <span class="text-xs ${readHow ? 'text-pass' : 'text-gold'} font-medium">${readHow ? 'Read ✓' : 'Start here →'}</span>
+        </div>
+      </button>
+      ${doneCard}
+      ${noPhaseNote}
+      ${phaseCards}
+      <button onclick="trGo('handbook')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
+        <p class="text-sm text-text font-medium">The Handbook</p>
+        <p class="text-xs text-muted mt-0.5">SOPs · Steps of Service · Your Sell · The POS</p>
+      </button>
+    </div>
+    ${isTrainee ? `<button onclick="startCloseout()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}
+    ${(!isTrainee && isTrainerUser()) ? `<p class="text-xs text-muted mt-5">You are viewing the trainee manual as a ${isManager() ? 'manager' : 'trainer'}. Trainees see live progress here.</p>` : ''}`;
+}
+
+/* ---- How We Work (principles + method) ----------------------------------- */
+function trHow(){
+  const pane = $('tab-training');
+  try { localStorage.setItem(trStoreKey('read_how'), '1'); } catch(e){}
+  const principles = manualPages('principle').map(p => `
+    <div class="bg-surface border border-line rounded-xl p-4">
+      <h3 class="font-display text-xl text-text mb-1.5">${esc(p.title)}</h3>
+      ${fmtContent(p.body)}
+    </div>`).join('');
+  const method = manualPages('method').map(p => `
+    <div class="flex gap-3 py-3 border-t border-line/50 first:border-t-0">
+      <span class="font-display text-2xl text-gold leading-none w-7 flex-shrink-0">${p.order}</span>
+      <div><p class="text-sm text-text font-medium mb-0.5">${esc(p.title)}</p>
+      ${fmtContent(p.body)}</div>
+    </div>`).join('');
+  pane.innerHTML = `
+    ${trBackBtn('Your Path', 'path')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Three Principles</p>
+    <h2 class="font-display text-2xl text-text mb-3 mt-0.5">How We Work</h2>
+    <div class="space-y-3 mb-6">${principles}</div>
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1">Our Method</p>
+    <div class="bg-surface border border-line rounded-xl px-4 py-1">${method}</div>`;
+}
+
+/* ---- A phase page -------------------------------------------------------- */
+function trPhase(){
+  const pane = $('tab-training');
+  const p = manual().phases.filter(x => x.order === S.training.phase)[0];
+  if(!p){ trGo('path'); return; }
+  const isTrainee = !!(S.user && S.user.training_for);
+  const jobKey = 'job_' + p.order;
+  const ticks = trChecks(jobKey);
+  const job = p.job.map((j, i) => `
+    <button onclick="trToggleTask('${jobKey}',${i})" class="w-full flex items-start gap-2.5 py-2 border-t border-line/50 first:border-t-0 text-left">
+      <span class="mt-0.5 w-4 h-4 rounded border ${ticks[i] ? 'bg-gold border-gold text-bg' : 'border-line'} flex-shrink-0 flex items-center justify-center text-[10px] font-bold leading-none">${ticks[i] ? '✓' : ''}</span>
+      <span class="text-sm ${ticks[i] ? 'text-text' : 'text-muted'}">${esc(j)}</span>
+    </button>`).join('');
+  const effect = p.effect.map(e => `<p class="text-sm text-text leading-relaxed border-l-2 border-gold pl-3 mb-2">${esc(e)}</p>`).join('');
+  const tools = p.tools.map(t => `<span class="inline-block bg-chip border border-line rounded-full px-3 py-1 text-xs text-text mr-1.5 mb-1.5">${esc(t)}</span>`).join('');
+  const sops = phaseSops(p.order);
+  const sopRows = sops.map(s => `
+    <button onclick="trGo('sop',${s.order},'phase')" class="w-full flex items-center justify-between py-2.5 border-t border-line/50 first:border-t-0 text-left">
+      <span class="text-sm text-text">${esc(s.title)}</span>
+      <span class="text-xs text-gold">${s.steps.length} steps →</span>
+    </button>`).join('');
+  const cps = phaseCheckpoints(p.order);
+  pane.innerHTML = `
+    ${trBackBtn('Your Path', 'path')}
+    <p class="text-xs uppercase tracking-wider text-golddim">${esc(p.shifts)} · ${esc(p.principle)}</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(p.title)}</h2>
+    ${fmtContent(p.narrative)}
+    <div class="space-y-3 mt-4">
+      <div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-1">The Job</p>
+        <p class="text-xs text-muted mb-1">Tap what you can already do.</p>
+        ${job}
+      </div>
+      <div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-2">The Effect</p>
+        ${effect}
+      </div>
+      <div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-2">Your Tools</p>
+        ${tools}
+      </div>
+      ${sops.length ? `<div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-1">The Way We Do It</p>
+        ${sopRows}
+      </div>` : ''}
+      ${cps.length ? `<div class="bg-surface border ${isTrainee ? 'border-gold' : 'border-line'} rounded-xl p-4">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-1">Checkpoints</p>
+        ${isTrainee ? trCpRows(cps, true) : `<p class="text-xs text-muted">Checkpoints track live on a trainee's own screen.</p>`}
+      </div>` : ''}
+    </div>`;
 }
 // Curriculum text: plain lines become paragraphs, "- " lines become bullets.
 function fmtContent(text){
@@ -2247,77 +2622,478 @@ function isTrainerUser(){
   return !!(S.user && (S.user.trainer || String(S.user.role || '').toLowerCase() === 'manager'));
 }
 
-function renderTraining(){
+/* ---- The Handbook (always-available reference) --------------------------- */
+function trHandbook(){
   const pane = $('tab-training');
-  const weeks = curricWeeks();
-  if(!weeks.length){
-    pane.innerHTML = `<p class="text-muted text-sm mt-4">No training curriculum yet. Add rows to the Training Curriculum sheet and they show up here.</p>`;
-    return;
-  }
-  const wk = (weeks.indexOf(S.training.week) !== -1) ? S.training.week : null;
-  if(wk === null){
-    // Trainers and managers can flip between the position plans.
-    const posChips = isTrainerUser() ? (function(){
-      const ps = [];
-      (S.curriculum || []).forEach(r => { if(r.position && ps.indexOf(r.position) === -1) ps.push(r.position); });
-      if(!ps.length) return '';
-      const cur = S.training.pos || '';
-      return `<div class="flex gap-2 flex-wrap mb-4">${['',...ps].map(p =>
-        `<button onclick="S.training.pos='${p}';S.training.week=null;renderTraining()"
-          class="px-3 py-1.5 rounded-full text-xs border ${cur===p?'bg-gold text-bg border-gold font-semibold':'border-line text-muted'}">${p||'All plans'}</button>`).join('')}</div>`;
-    })() : '';
-    const cards = weeks.map(w => `<button onclick="selectWeek(${w})" class="bg-surface border border-line rounded-xl p-5 text-left hover:border-gold transition-colors">
-      <p class="text-text font-medium text-lg">Week ${w}</p>
-      <p class="text-muted text-xs mt-1.5">${weekDays(w).length} day${weekDays(w).length===1?'':'s'} planned</p>
-    </button>`).join('');
-    pane.innerHTML = `
-      <h2 class="font-display text-2xl text-text mb-1">Training${S.user && S.user.training_for ? ` · ${esc(S.user.training_for)}` : ''}</h2>
-      <p class="text-muted text-sm mb-4">What week of training are you in?</p>
-      ${posChips}
-      <div class="grid grid-cols-2 gap-3">${cards}</div>`;
-    return;
-  }
-
-  const days = weekDays(wk);
-  const dy = (days.indexOf(S.training.day) !== -1) ? S.training.day : null;
-  const chips = days.map(d => `<button onclick="selectDay(${d})" class="px-4 py-2 rounded-full text-sm border ${d===dy?'bg-gold text-bg border-gold font-semibold':'border-line text-text'}">Day ${d}</button>`).join('');
-  const trainerView = isTrainerUser();
-
-  const dayBlocks = (dy === null)
-    ? `<p class="text-muted text-sm">Pick your day above. Today's close-out gets logged to that day. You can still read the whole week below once you pick.</p>`
-    : days.map(d => {
-        const rows = curricRows().filter(r => r.week === wk && r.day === d);
-        const sel = d === dy;
-        return `<div class="bg-surface border ${sel?'border-gold':'border-line'} rounded-xl p-4 ${sel?'':'opacity-75'}">
-          <p class="text-xs uppercase tracking-wider ${sel?'text-gold':'text-golddim'} mb-1.5">Day ${d}${sel?' · your day':''}</p>
-          ${rows.map(r => `
-            ${r.title ? `<h3 class="font-display text-xl text-text mb-2">${esc(r.title)}</h3>` : ''}
-            ${fmtContent(r.content)}
-            ${trainerView && r.trainer_notes ? `<div class="border-l-2 border-gold pl-3 mt-3">
-              <p class="text-xs uppercase tracking-wider text-golddim mb-1">Trainer Notes</p>
-              <p class="text-sm text-muted leading-relaxed">${esc(r.trainer_notes)}</p></div>` : ''}
-          `).join('')}
-        </div>`;
-      }).join('');
-
+  const rows = [
+    ['sos',      'Steps of Service',    '11 table touches, each with an owner'],
+    ['sops',     'The Way We Do It',    'The SOPs: why, when, and the steps'],
+    ['style',    "The Server's Style",  'Make a friend, tour the menu, your scripts'],
+    ['pos',      'The POS Basics',      'What you can do on the register'],
+    ['floorpg',  'The Floor',           'The maps and the Table Test'],
+    ['minimums', 'Server Minimums',     'The dish counts that earn you tables'],
+    ['problems', 'The Top Table Problems', 'The plan for when things go sideways'],
+    ['done',     'What Done Means',     'How training ends']
+  ].map(r => {
+    const go = r[0] === 'floorpg' ? `switchTab('floor')` : `trGo('${r[0]}')`;
+    return `<button onclick="${go}" class="w-full flex items-center justify-between py-3 border-t border-line/50 first:border-t-0 text-left">
+      <div><p class="text-sm text-text font-medium">${r[1]}</p>
+      <p class="text-xs text-muted mt-0.5">${r[2]}</p></div>
+      <span class="text-gold text-sm ml-3">→</span>
+    </button>`;
+  }).join('');
   pane.innerHTML = `
-    <button onclick="S.training={week:null,day:null};renderTraining()" class="text-gold text-sm mb-3">&larr; Weeks</button>
-    <h2 class="font-display text-2xl text-text mb-2">Week ${wk}</h2>
-    <div class="flex gap-2 flex-wrap mb-4">${chips}</div>
-    <div class="space-y-3">${dayBlocks}</div>
-    ${dy !== null ? `<button onclick="startCloseout()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}`;
+    ${trBackBtn('Your Path', 'path')}
+    <h2 class="font-display text-2xl text-text mb-3">The Handbook</h2>
+    <div class="bg-surface border border-line rounded-xl px-4 py-1">${rows}</div>`;
 }
-function selectWeek(w){ S.training.week = w; S.training.day = null; renderTraining(); }
-function selectDay(d){ S.training.day = d; renderTraining(); }
 
-/* ---- End-of-day close-out ------------------------------------------------ */
+/* ---- SOP list + one SOP + order-the-steps practice ----------------------- */
+function trSopList(){
+  const pane = $('tab-training');
+  const byRole = {};
+  manual().sops.forEach(s => {
+    const r = s.role || 'House';
+    if(!byRole[r]) byRole[r] = [];
+    byRole[r].push(s);
+  });
+  const groups = Object.keys(byRole).map(role => `
+    <p class="text-xs uppercase tracking-wider text-golddim mt-4 mb-1">${esc(role)}</p>
+    <div class="bg-surface border border-line rounded-xl px-4 py-1">
+      ${byRole[role].map(s => `
+        <button onclick="trGo('sop',${s.order},'sops')" class="w-full flex items-center justify-between py-2.5 border-t border-line/50 first:border-t-0 text-left">
+          <span class="text-sm text-text">${esc(s.title)}</span>
+          <span class="text-xs text-gold">${s.steps.length} steps →</span>
+        </button>`).join('')}
+    </div>`).join('');
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <h2 class="font-display text-2xl text-text mb-1">The Way We Do It</h2>
+    <p class="text-muted text-sm">Every procedure keeps its why next to its steps. Read it, then practice the order.</p>
+    ${groups}`;
+}
+function trSop(){
+  const pane = $('tab-training');
+  const s = manual().sops.filter(x => x.order === S.training.sop)[0];
+  if(!s){ trGo('sops'); return; }
+  const back = S.training.back === 'phase' ? `trGo('phase',${S.training.phase})` : `trGo('sops')`;
+  const steps = s.steps.map((st, i) => `
+    <div class="flex gap-3 py-2 border-t border-line/50 first:border-t-0">
+      <span class="font-display text-lg text-gold leading-snug w-5 flex-shrink-0">${i + 1}</span>
+      <span class="text-sm text-text leading-relaxed">${esc(st)}</span>
+    </div>`).join('');
+  pane.innerHTML = `
+    <button onclick="${back}" class="text-gold text-sm mb-3">&larr; Back</button>
+    <p class="text-xs uppercase tracking-wider text-golddim">${esc(s.role)} · The Way We Do It</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(s.title)}</h2>
+    <div class="space-y-2.5 mb-3">
+      <div class="border-l-2 border-gold bg-surface rounded-r-xl px-3.5 py-2.5">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-0.5">Why</p>
+        <p class="text-sm text-text leading-relaxed">${esc(s.why)}</p>
+      </div>
+      <div class="border-l-2 border-gold bg-surface rounded-r-xl px-3.5 py-2.5">
+        <p class="text-xs uppercase tracking-wider text-golddim mb-0.5">When</p>
+        <p class="text-sm text-text leading-relaxed">${esc(s.when)}</p>
+      </div>
+    </div>
+    <div class="bg-surface border border-line rounded-xl px-4 py-2 mb-4">${steps}</div>
+    ${s.steps.length > 2 ? `<button onclick="startSopDrill()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Practice: put the steps in order →</button>` : ''}`;
+}
+// Shuffle that never hands back the original order (that would grade itself).
+function trShuffle(arr){
+  const a = arr.slice();
+  for(let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  if(a.length > 1 && a.every((v, i) => v === i)){ const t = a[0]; a[0] = a[1]; a[1] = t; }
+  return a;
+}
+function startSopDrill(){
+  const s = manual().sops.filter(x => x.order === S.training.sop)[0];
+  if(!s) return;
+  S._practice = { sop: s, bank: trShuffle(s.steps.map((x, i) => i)), placed: [], graded: false };
+  trGo('sopdrill');
+}
+function trSopDrill(){
+  const pane = $('tab-training');
+  const pr = S._practice;
+  if(!pr || !pr.sop){ trGo('sop', S.training.sop, S.training.back); return; }
+  const s = pr.sop;
+  const placedRows = pr.placed.map((stepIdx, slot) => {
+    let mark = '', cls = 'border-line';
+    if(pr.graded){
+      const right = stepIdx === slot;
+      cls = right ? 'border-pass' : 'border-fail';
+      mark = right ? `<span class="text-pass text-xs font-bold ml-2">✓</span>` : `<span class="text-fail text-xs font-bold ml-2">✗</span>`;
+    }
+    return `<button ${pr.graded ? '' : `onclick="sopDrillTakeBack(${slot})"`} class="w-full flex items-start gap-3 bg-surface border ${cls} rounded-lg px-3 py-2 text-left">
+      <span class="font-display text-lg text-gold leading-snug w-5 flex-shrink-0">${slot + 1}</span>
+      <span class="text-sm text-text leading-relaxed flex-1">${esc(s.steps[stepIdx])}${mark}</span>
+    </button>`;
+  }).join('');
+  const bankRows = pr.bank.map((stepIdx, bi) => `
+    <button onclick="sopDrillPlace(${bi})" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-left text-sm text-text leading-relaxed">${esc(s.steps[stepIdx])}</button>`).join('');
+  const allPlaced = pr.bank.length === 0;
+  const allRight = pr.graded && pr.placed.every((v, i) => v === i);
+  pane.innerHTML = `
+    <button onclick="trGo('sop',${s.order},'${S.training.back || 'sops'}')" class="text-gold text-sm mb-3">&larr; ${esc(s.title)}</button>
+    <p class="text-xs uppercase tracking-wider text-golddim">Practice · ${esc(s.title)}</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-1">Put the steps in order</h2>
+    <p class="text-muted text-sm mb-4">${pr.graded ? (allRight ? 'That is the way we do it.' : 'Not yet. The order is the point; read it again and go once more.') : 'Tap the steps below in the order they happen. Tap a placed step to take it back.'}</p>
+    <div class="space-y-2 mb-4">${placedRows || `<p class="text-xs text-muted">Your order builds here.</p>`}</div>
+    ${pr.bank.length ? `<p class="text-xs uppercase tracking-wider text-golddim mb-2">The steps, shuffled</p>
+    <div class="space-y-2 mb-4">${bankRows}</div>` : ''}
+    ${allPlaced && !pr.graded ? `<button onclick="sopDrillGrade()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Check my order</button>` : ''}
+    ${pr.graded ? (allRight
+      ? `<div class="bg-surface border border-pass rounded-xl p-4 text-center mb-3"><p class="font-display text-xl text-pass">Nailed it.</p><p class="text-xs text-muted mt-1">${S.user && S.user.training_for ? 'Logged. Your trainer can see your practice passes.' : 'Perfect order, first to last.'}</p></div>
+         <button onclick="trGo('sop',${s.order},'${S.training.back || 'sops'}')" class="w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back to the SOP</button>`
+      : `<button onclick="startSopDrill()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg mb-2">Try it again</button>
+         <button onclick="trGo('sop',${s.order},'${S.training.back || 'sops'}')" class="w-full border border-line text-muted py-2.5 rounded-lg text-sm">Reread the steps</button>`) : ''}`;
+}
+function sopDrillPlace(bankIdx){
+  const pr = S._practice;
+  if(!pr || pr.graded) return;
+  pr.placed.push(pr.bank.splice(bankIdx, 1)[0]);
+  renderTraining();
+}
+function sopDrillTakeBack(slot){
+  const pr = S._practice;
+  if(!pr || pr.graded) return;
+  pr.bank.push(pr.placed.splice(slot, 1)[0]);
+  renderTraining();
+}
+function sopDrillGrade(){
+  const pr = S._practice;
+  if(!pr || pr.bank.length) return;
+  pr.graded = true;
+  const correct = pr.placed.filter((v, i) => v === i).length;
+  if(correct === pr.placed.length) submitPractice('SOP: ' + pr.sop.title, 'sop:' + pr.sop.order, correct, pr.placed.length);
+  renderTraining();
+}
+
+/* ---- Steps of Service + the owner quiz ----------------------------------- */
+function trSos(){
+  const pane = $('tab-training');
+  const steps = manual().sos.map(t => `
+    <div class="flex gap-3 items-baseline py-2.5 border-t border-line/50 first:border-t-0">
+      <span class="font-display text-lg text-gold w-6 flex-shrink-0">${t.step}</span>
+      <div class="flex-1">
+        <p class="text-sm text-text font-medium">${esc(t.title)}</p>
+        <p class="text-xs text-muted leading-relaxed mt-0.5">${esc(t.detail)}</p>
+      </div>
+      <span class="text-[10px] text-muted border border-line rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">${esc(t.owner)}</span>
+    </div>`).join('');
+  const upkeep = manualPages('upkeep')[0];
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-1">Steps of Service</h2>
+    <p class="text-muted text-sm mb-3">We count service in table touches. Every intentional interaction with a guest is a step, and every step has an owner.</p>
+    <div class="bg-surface border border-line rounded-xl px-4 py-1 mb-3">${steps}</div>
+    ${upkeep ? `<div class="border-l-2 border-gold bg-surface rounded-r-xl px-3.5 py-2.5 mb-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-0.5">${esc(upkeep.title)}</p>
+      <p class="text-sm text-text leading-relaxed">${esc(upkeep.body)}</p>
+    </div>` : ''}
+    <button onclick="startSosQuiz()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Quiz: who owns each step? →</button>`;
+}
+function startSosQuiz(){
+  const all = manual().sos;
+  const owners = [];
+  all.forEach(t => { if(owners.indexOf(t.owner) === -1) owners.push(t.owner); });
+  S._practice = { quiz: trShuffle(all.map((x, i) => i)).map(i => all[i]), owners: owners, idx: 0, correct: 0, answered: null };
+  trGo('sosquiz');
+}
+function trSosQuiz(){
+  const pane = $('tab-training');
+  const pr = S._practice;
+  if(!pr || !pr.quiz){ trGo('sos'); return; }
+  if(pr.idx >= pr.quiz.length){
+    const total = pr.quiz.length;
+    const perfect = pr.correct === total;
+    if(perfect && !pr.logged){ pr.logged = true; submitPractice('Steps of Service', 'sos-owners', pr.correct, total); }
+    pane.innerHTML = `
+      ${trBackBtn('Steps of Service', 'sos')}
+      <div class="max-w-md mx-auto text-center mt-8">
+        <p class="font-display text-3xl ${perfect ? 'text-pass' : 'text-text'}">${pr.correct} of ${total}</p>
+        <p class="text-sm text-muted mt-2">${perfect ? (S.user && S.user.training_for ? 'Every owner right. Logged; your trainer can see it.' : 'Every owner right.') : 'The owners matter: whose step it is decides who moves. Run it again.'}</p>
+        ${perfect ? '' : `<button onclick="startSosQuiz()" class="mt-5 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Run it again</button>`}
+        <button onclick="trGo('sos')" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back to the steps</button>
+      </div>`;
+    return;
+  }
+  const q = pr.quiz[pr.idx];
+  const opts = pr.opts || (pr.opts = trShuffle(pr.owners.map((x, i) => i)).map(i => pr.owners[i]));
+  const buttons = opts.map(o => {
+    let cls = 'border-line text-text', mark = '';
+    if(pr.answered !== null){
+      if(o === q.owner){ cls = 'border-pass text-pass'; mark = ' <span class="font-bold">✓</span>'; }
+      else if(o === pr.answered){ cls = 'border-fail text-fail'; mark = ' <span class="font-bold">✗</span>'; }
+      else cls = 'border-line text-muted';
+    }
+    return `<button ${pr.answered === null ? `onclick="sosQuizAnswer('${o.replace(/'/g, "\\'")}')"` : ''} class="w-full bg-surface border ${cls} rounded-lg px-3 py-2.5 text-left text-sm">${esc(o)}${mark}</button>`;
+  }).join('');
+  pane.innerHTML = `
+    ${trBackBtn('Steps of Service', 'sos')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Question ${pr.idx + 1} of ${pr.quiz.length} · ${pr.correct} right</p>
+    <h2 class="font-display text-2xl text-text mt-1 mb-1">Who owns this touch?</h2>
+    <div class="bg-surface border border-gold rounded-xl p-4 my-3">
+      <p class="font-display text-xl text-text">${q.step}. ${esc(q.title)}</p>
+      <p class="text-xs text-muted mt-1">${esc(q.detail)}</p>
+    </div>
+    <div class="space-y-2">${buttons}</div>
+    ${pr.answered !== null ? `<button onclick="sosQuizNext()" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">${pr.idx + 1 >= pr.quiz.length ? 'See My Score →' : 'Next Question →'}</button>` : ''}`;
+}
+function sosQuizAnswer(owner){
+  const pr = S._practice;
+  if(!pr || pr.answered !== null) return;
+  pr.answered = owner;
+  if(owner === pr.quiz[pr.idx].owner) pr.correct++;
+  renderTraining();
+}
+function sosQuizNext(){
+  const pr = S._practice;
+  if(!pr) return;
+  pr.idx++; pr.answered = null; pr.opts = null;
+  renderTraining();
+}
+
+/* Practice results land in Test Results only when passed (test_type
+   'practice'), so trainers see effort and nobody fears a logged miss. */
+function submitPractice(section, itemId, correct, total){
+  if(!S.user || !S.user.training_for) return;   // casual for trainers and graduates
+  const payload = { action:'submitResult',
+    first:S.user.first_name, last:S.user.last_name,
+    test_section:section, test_level:1,
+    score_correct:correct, score_total:total,
+    pass_fail:'PASS', duration_seconds:0,
+    test_type:'practice', item_id:itemId };
+  S.results.push({ test_section:section, test_level:1, score_correct:correct, score_total:total,
+    score_percent:100, pass_fail:'PASS', date_taken:new Date().toISOString(), duration_seconds:0,
+    test_type:'practice', item_id:itemId });
+  apiSend(payload).then(function(r){
+    if(!r || !r.ok) reportError('submit-practice', new Error((r && r.error) || 'server refused'));
+  }).catch(function(){ outboxAdd(payload, 'practice pass'); });
+}
+
+/* ---- The Server's Style (with scripts that speak your menu) --------------- */
+function trStyleItems(section){
+  const rows = manualPages(section);
+  const head = rows.filter(r => r.order === 0)[0];
+  const items = rows.filter(r => r.order > 0);
+  return `
+    ${head ? `<p class="font-display text-xl text-text mb-2">${esc(head.title)}</p>` : ''}
+    <div class="bg-surface border border-line rounded-xl px-4 py-1 mb-5">
+      ${items.map(r => `<div class="py-2.5 border-t border-line/50 first:border-t-0">
+        <p class="text-sm text-text font-medium">${esc(r.title)}</p>
+        ${r.body ? `<p class="text-xs text-muted leading-relaxed mt-0.5">${esc(r.body)}</p>` : ''}
+      </div>`).join('')}
+    </div>`;
+}
+function styleFillPools(){
+  const bev = {};
+  DRINK_SECTIONS.forEach(s => { bev[s] = 1; });
+  bev['Bar Prep'] = 1;
+  const food = S.menu.filter(it => !bev[it.section] && !/dessert/i.test(it.section));
+  const mastered = masteredDishIds();
+  let dishes = food.filter(it => mastered.has(String(it.item_id))).map(it => it.item_name);
+  const usingMastered = dishes.length > 0;
+  if(!dishes.length) dishes = food.map(it => it.item_name);
+  const desserts = S.menu.filter(it => /dessert/i.test(it.section)).map(it => it.item_name);
+  return { dishes: dishes, desserts: desserts, usingMastered: usingMastered };
+}
+function trStyle(){
+  const pane = $('tab-training');
+  const pools = styleFillPools();
+  if(!S._styleFill) S._styleFill = {};
+  const scripts = manualPages('script').map(sc => {
+    const pick = function(pool, fallback){
+      if(!pool.length) return `<span class="text-muted">[${fallback}]</span>`;
+      const key = 'c' + sc.order;
+      if(S._styleFill[key] === undefined) S._styleFill[key] = Math.floor(Math.random() * pool.length);
+      return `<span class="text-gold">${esc(pool[S._styleFill[key] % pool.length])}</span>`;
+    };
+    let line = esc(sc.body);
+    line = line.replace(/\[DISH\]/g, pick(pools.dishes, 'name a dish'));
+    line = line.replace(/\[DESSERT\]/g, pick(pools.desserts, 'name the dessert'));
+    const fillable = /\[DISH\]|\[DESSERT\]/.test(sc.body);
+    return `<button ${fillable ? `onclick="cycleScript(${sc.order})"` : ''} class="block w-full text-left bg-surface border border-gold rounded-xl p-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-1">${esc(sc.title)}</p>
+      <p class="font-display text-lg text-text leading-snug">${line}</p>
+      ${sc.note ? `<p class="text-xs text-muted mt-2 leading-relaxed">${esc(sc.note)}</p>` : ''}
+      ${fillable ? `<p class="text-[10px] text-golddim mt-2">Tap for another dish</p>` : ''}
+    </button>`;
+  }).join('');
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-4">The Server's Style</h2>
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1.5">The First Minutes</p>
+    ${trStyleItems('style_first')}
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1.5">The Order</p>
+    ${trStyleItems('style_order')}
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1.5">Your Scripts</p>
+    ${pools.usingMastered ? `<p class="text-xs text-muted mb-2">The dishes in gold come from your own mastered list.</p>` : `<p class="text-xs text-muted mb-2">Master dishes in the Test tab and these scripts start speaking your list.</p>`}
+    <div class="space-y-3">${scripts}</div>`;
+}
+function cycleScript(order){
+  if(!S._styleFill) S._styleFill = {};
+  const key = 'c' + order;
+  S._styleFill[key] = (S._styleFill[key] === undefined ? 0 : S._styleFill[key]) + 1;
+  renderTraining();
+}
+
+/* ---- POS Basics / Minimums / Problems / Done ------------------------------ */
+function trPos(){
+  const pane = $('tab-training');
+  const groups = manualPages('pos').map(g => {
+    const items = String(g.body || '').split('|').map(s => s.trim()).filter(s => s.length > 0);
+    const key = 'pos_' + g.order;
+    const ticks = trChecks(key);
+    return `<div class="bg-surface border border-line rounded-xl p-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-1">${esc(g.title)}</p>
+      ${items.map((it, i) => `
+        <button onclick="trToggleTask('${key}',${i})" class="w-full flex items-start gap-2.5 py-2 border-t border-line/50 first:border-t-0 text-left">
+          <span class="mt-0.5 w-4 h-4 rounded border ${ticks[i] ? 'bg-gold border-gold text-bg' : 'border-line'} flex-shrink-0 flex items-center justify-center text-[10px] font-bold leading-none">${ticks[i] ? '✓' : ''}</span>
+          <span class="text-sm ${ticks[i] ? 'text-text' : 'text-muted'} leading-relaxed">${esc(it)}</span>
+        </button>`).join('')}
+    </div>`;
+  }).join('');
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-1">The POS Basics</h2>
+    <p class="text-muted text-sm mb-3">Tap what you can already do on the register. Your trainer walks the rest with you.</p>
+    <div class="space-y-3">${groups}</div>`;
+}
+function trMinimums(){
+  const pane = $('tab-training');
+  const page = manualPages('minimums')[0];
+  const gp = gateProgress();
+  const rows = gp.groups.map(g => `
+    <div class="flex items-center justify-between py-2.5 border-t border-line/50 first:border-t-0">
+      <span class="text-sm text-text">${esc(g.group)}</span>
+      <span class="text-xs ${g.done ? 'text-pass font-medium' : 'text-muted'}">${g.done ? '✓ Done' : g.count + ' of ' + g.required}</span>
+    </div>`).join('');
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-2">Server Minimums</h2>
+    ${page ? fmtContent(page.body) : ''}
+    ${gp.groups.length ? `<div class="bg-surface border border-line rounded-xl px-4 py-1 mt-3">${rows}</div>
+      <button onclick="switchTab('test')" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Work on the Menu Test →</button>`
+    : `<p class="text-muted text-sm mt-3">A manager has not set the numbers yet. They appear here the moment that happens.</p>`}`;
+}
+function trProblems(){
+  const pane = $('tab-training');
+  const rows = manualPages('problems');
+  const intro = rows.filter(r => r.order === 1)[0];
+  const items = rows.filter(r => r.order > 1);
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-2">The Top Table Problems</h2>
+    ${intro ? fmtContent(intro.body) : ''}
+    ${items.length ? `<div class="space-y-3 mt-3">${items.map(r => `
+      <div class="bg-surface border border-line rounded-xl p-4">
+        <p class="text-sm text-text font-medium mb-1">${esc(r.title)}</p>
+        ${fmtContent(r.body)}
+      </div>`).join('')}</div>`
+    : `<p class="text-muted text-sm mt-3">The list is being written. Until it lands here, bring every odd situation to your manager; that is always the right move.</p>`}`;
+}
+function trDone(){
+  const pane = $('tab-training');
+  const page = manualPages('done')[0];
+  const phases = trainingPhases();
+  const isTrainee = !!(S.user && S.user.training_for);
+  const allDone = isTrainee && phases.length > 0 && phases.every(p => phaseComplete(p.order));
+  pane.innerHTML = `
+    ${trBackBtn('The Handbook', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Completion</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-2">What Done Means</h2>
+    ${page ? fmtContent(page.body) : ''}
+    ${allDone ? `<div class="bg-surface border border-pass rounded-xl p-5 text-center mt-4">
+      <p class="font-display text-2xl text-pass">You did it.</p>
+      <p class="text-sm text-muted mt-1.5">Every check on your Path is passed. Welcome to the floor.</p>
+    </div>` : ''}`;
+}
+
+/* ---- On-floor checks: hand the device to a trainer ------------------------ */
+const CHECK_LABELS = { busser:'Busser Check', runner:'Runner Check', skillout:'Server Skill Out' };
+const CHECK_NEXT = {
+  busser:'You start running food.',
+  runner:'Keep building your Menu Test; it earns you tables.',
+  skillout:'You are a server. Congratulations.'
+};
+function trCheckFlow(){
+  const pane = $('tab-training');
+  const id = S.training.check;
+  const label = CHECK_LABELS[id];
+  if(!label || !S.user){ trGo('path'); return; }
+  pane.innerHTML = `
+    <button onclick="trGo('phase',${S.training.phase || 1})" class="text-gold text-sm mb-3">&larr; Back</button>
+    <div class="bg-surface border border-gold rounded-xl p-4 mb-5 text-center">
+      <p class="font-display text-xl text-gold">Hand this to a trainer or manager.</p>
+    </div>
+    <p class="text-xs uppercase tracking-wider text-golddim mb-1">${esc(label)} · ${esc(S.user.first_name + ' ' + S.user.last_name)}</p>
+    <p class="text-sm text-text mb-4 leading-relaxed">Recording this says: I watched ${esc(S.user.first_name)} pass the ${esc(label)} on the floor.</p>
+    <div class="grid grid-cols-2 gap-2 mb-2">
+      <input id="tc_first" placeholder="Trainer first name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
+      <input id="tc_last" placeholder="Trainer last name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
+    </div>
+    <input id="tc_pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Trainer PIN"
+      class="pin-mask w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text tracking-[0.5em] placeholder-muted mb-4"/>
+    <p id="tcErr" class="text-fail text-sm mb-2 hidden"></p>
+    <button onclick="submitTrainerCheck()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Record the ${esc(label)}</button>`;
+}
+async function submitTrainerCheck(){
+  const id = S.training.check;
+  const label = CHECK_LABELS[id];
+  const err = $('tcErr');
+  hide(err);
+  showLoader('Recording…');
+  try {
+    const r = await apiSend({ action:'trainerCheck',
+      trainer_first: ($('tc_first').value || '').trim(),
+      trainer_last:  ($('tc_last').value || '').trim(),
+      trainer_pin:   ($('tc_pin').value || '').trim(),
+      first:S.user.first_name, last:S.user.last_name,
+      check_id:id });
+    hideLoader();
+    if(!r || !r.ok){
+      err.textContent = (r && /unknown action/i.test(r.error || ''))
+        ? 'The server needs its update before checks can be recorded. Ask your manager.'
+        : ((r && r.error) || 'Could not record it. Try again.');
+      show(err);
+      return;
+    }
+    S.results.push({ test_section:label, test_level:1, score_correct:1, score_total:1,
+      score_percent:100, pass_fail:'PASS', date_taken:new Date().toISOString(),
+      duration_seconds:0, test_type:'check', item_id:id });
+    userCacheSave(S.user.first_name, S.user.last_name, S.pin);
+    const pane = $('tab-training');
+    pane.innerHTML = `
+      <div class="max-w-md mx-auto text-center mt-10 fade-in">
+        <p class="font-display text-3xl text-pass">${esc(label)} passed.</p>
+        <p class="text-sm text-muted mt-3">${esc(CHECK_NEXT[id] || '')}</p>
+        <button onclick="trGo('path')" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Back to My Path →</button>
+      </div>`;
+  } catch(e){
+    hideLoader();
+    err.textContent = 'No connection right now. Checks need the server; try again when the wifi is back.';
+    show(err);
+  }
+}
+
+/* ---- End-of-day close-out (logged by shift number) ----------------------- */
 function startCloseout(){
   const pane = $('tab-training');
+  S.training.shiftClosing = currentTrainingShift() || 0;
   const qs = (S.closeoutQs || []).map((q,i) => `
     <div class="mb-4"><p class="text-sm text-text mb-1.5">${esc(q)}</p>
     <textarea id="co_q_${i}" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>`).join('');
   pane.innerHTML = `
-    <p class="text-xs uppercase tracking-wider text-golddim">Week ${S.training.week} · Day ${S.training.day}</p>
+    <p class="text-xs uppercase tracking-wider text-golddim">${S.training.shiftClosing ? `Shift ${S.training.shiftClosing} of ${totalTrainingShifts()}` : 'Training Day'}</p>
     <h2 class="font-display text-2xl text-text mt-1 mb-4">Close Out Your Day</h2>
     ${qs}
     <div class="mb-4"><p class="text-sm text-text mb-1.5">Where do you feel strong right now?</p>
@@ -2326,7 +3102,7 @@ function startCloseout(){
     <textarea id="co_weak" rows="2" class="w-full bg-bg border border-line rounded-lg px-3 py-2 text-sm text-text outline-none focus:border-gold"></textarea></div>
     <p id="coErr" class="text-fail text-sm mb-2 hidden"></p>
     <button onclick="submitCloseout()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Submit and Get Trainer Sign-Off →</button>
-    <button onclick="renderTraining()" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back</button>`;
+    <button onclick="trGo('path')" class="mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm">Back</button>`;
 }
 async function submitCloseout(){
   const qa = (S.closeoutQs || []).map((q,i) => q + '\n' + (($('co_q_'+i)||{}).value || '').trim()).join('\n\n');
@@ -2334,11 +3110,16 @@ async function submitCloseout(){
   try {
     const r = await apiPost({ action:'submitCloseout',
       first:S.user.first_name, last:S.user.last_name,
-      week:S.training.week, day:S.training.day, q_and_a: qa,
+      week:0, day:0, shift:S.training.shiftClosing, q_and_a: qa,
       feel_strong: ($('co_strong').value || '').trim(),
       feel_weak: ($('co_weak').value || '').trim() });
     hideLoader();
     if(!r || !r.ok){ const e = $('coErr'); e.textContent = (r && r.error) || 'Could not save. Try again.'; show(e); return; }
+    // The shift clock ticks forward the moment the close-out lands.
+    if(S.user.training_closeouts !== undefined && S.user.training_closeouts !== null){
+      S.user.training_closeouts = Number(S.user.training_closeouts) + 1;
+      userCacheSave(S.user.first_name, S.user.last_name, S.pin);
+    }
     startSignoff();
   } catch(err){ hideLoader(); const e = $('coErr'); e.textContent = 'Connection problem. Try again.'; show(e); }
 }
@@ -2353,12 +3134,12 @@ function startSignoff(){
     <div class="bg-surface border border-gold rounded-xl p-4 mb-5 text-center">
       <p class="font-display text-xl text-gold">Day logged. Now hand this to your trainer.</p>
     </div>
-    <p class="text-xs uppercase tracking-wider text-golddim mb-2">Trainer Sign-Off · Week ${S.training.week}, Day ${S.training.day} · ${esc(S.user.first_name+' '+S.user.last_name)}</p>
+    <p class="text-xs uppercase tracking-wider text-golddim mb-2">Trainer Sign-Off${S.training.shiftClosing ? ` · Shift ${S.training.shiftClosing}` : ''} · ${esc(S.user.first_name+' '+S.user.last_name)}</p>
     <div class="grid grid-cols-2 gap-2 mb-2">
       <input id="so_first" placeholder="Trainer first name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
       <input id="so_last" placeholder="Trainer last name" autocomplete="off" class="bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text placeholder-muted"/>
     </div>
-    <input id="so_pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Trainer PIN"
+    <input id="so_pin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Trainer PIN"
       class="pin-mask w-full bg-bg border border-line rounded-lg px-3 py-2.5 text-sm text-text tracking-[0.5em] placeholder-muted mb-5"/>
     ${qs}
     <div class="mb-4"><p class="text-sm text-text mb-1.5">Anything else? (optional)</p>
@@ -2376,7 +3157,7 @@ async function submitSignoff(){
       trainer_last:  ($('so_last').value || '').trim(),
       trainer_pin:   ($('so_pin').value || '').trim(),
       first:S.user.first_name, last:S.user.last_name,
-      week:S.training.week, day:S.training.day,
+      week:0, day:0, shift:S.training.shiftClosing,
       q_and_a: qa, notes: ($('so_notes').value || '').trim() });
     hideLoader();
     if(!r || !r.ok){ const e = $('soErr'); e.textContent = (r && r.error) || 'Could not save. Try again.'; show(e); return; }
@@ -4050,11 +4831,11 @@ function drawTeamProgress(d){
   const tlog = (d.trainingLog || []).slice(-8).reverse();
   const soffs = (d.signoffs || []).slice(-8).reverse();
   const tlogRows = tlog.map(x => `<div class="py-2 border-b border-line last:border-0">
-      <p class="text-sm text-text">${esc((x.first_name+' '+x.last_name).trim())} <span class="text-muted text-xs">closed out Week ${x.week}, Day ${x.day} · ${fmtDate(x.date)}</span></p>
+      <p class="text-sm text-text">${esc((x.first_name+' '+x.last_name).trim())} <span class="text-muted text-xs">closed out ${x.shift ? `Shift ${x.shift}` : `Week ${x.week}, Day ${x.day}`} · ${fmtDate(x.date)}</span></p>
       ${x.feel_weak ? `<p class="text-xs text-muted mt-0.5">Needs work: ${esc(x.feel_weak)}</p>` : ''}
     </div>`).join('') || `<p class="text-muted text-sm">No training close-outs yet.</p>`;
   const soffRows = soffs.map(x => `<div class="py-2 border-b border-line last:border-0">
-      <p class="text-sm text-text">${esc((x.trainee_first+' '+x.trainee_last).trim())} <span class="text-muted text-xs">signed off by ${esc((x.trainer_first+' '+x.trainer_last).trim())} · Week ${x.week}, Day ${x.day} · ${fmtDate(x.date)}</span></p>
+      <p class="text-sm text-text">${esc((x.trainee_first+' '+x.trainee_last).trim())} <span class="text-muted text-xs">signed off by ${esc((x.trainer_first+' '+x.trainer_last).trim())} · ${x.shift ? `Shift ${x.shift}` : `Week ${x.week}, Day ${x.day}`} · ${fmtDate(x.date)}</span></p>
       ${x.notes ? `<p class="text-xs text-muted mt-0.5">${esc(x.notes)}</p>` : ''}
     </div>`).join('') || `<p class="text-muted text-sm">No sign-offs yet.</p>`;
 

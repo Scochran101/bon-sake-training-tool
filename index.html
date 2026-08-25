@@ -2486,7 +2486,7 @@ function trPath(){
       isCurrent ? `<div class="mt-3">${trCpRows(cps, false)}</div>
         <div class="mt-3 w-full bg-gold text-bg font-semibold py-2.5 rounded-lg text-center text-sm">Continue · ${esc(p.title)} →</div>` :
       `<p class="text-xs text-muted mt-2">Read ahead any time.</p>`;
-    return `<button onclick="trGo('phase',${p.order})" class="block w-full text-left bg-surface border ${isCurrent ? 'border-gold' : 'border-line'} rounded-xl p-4 ${(!isTrainee || done || isCurrent) ? '' : 'opacity-60'}">
+    return `<button onclick="trGo('phase',${p.order})" class="block w-full text-left bg-surface border ${isCurrent ? 'border-gold' : 'border-line'} rounded-xl p-4 ${(!isTrainee||done||isCurrent)?'':'opacity-60'}">
       <p class="text-xs uppercase tracking-wider text-golddim">${esc(p.shifts)} · ${esc(p.principle)}</p>
       <p class="font-display text-xl text-text mt-0.5">${esc(p.title)}</p>
       ${status}

@@ -118,23 +118,22 @@
   <div class="w-full max-w-sm fade-in">
     <div id="loginLogo" class="flex justify-center mb-3"></div>
 
-    <!-- One-field sign-in: an activated 5-digit PIN is the whole login. The
-         name fields appear only for first-timers (starter PIN 12345), legacy
-         4-digit PINs, and the rare duplicate. -->
+    <!-- Sign-in: first name + PIN. The PIN field brings up the number pad.
+         The last-name field appears only when two people share both. -->
     <form id="loginForm" class="mt-8 space-y-4">
+      <div>
+        <label class="block text-xs uppercase tracking-wider text-golddim mb-1">First Name</label>
+        <input id="loginFirst" type="text" autocomplete="off" required
+          class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="First name" />
+      </div>
       <div>
         <label class="block text-xs uppercase tracking-wider text-golddim mb-1">Your PIN</label>
         <input id="loginPin" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5" required
           autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-          class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="•••••" />
+          class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none" placeholder="••••" />
       </div>
       <div id="loginNames" class="hidden space-y-4">
         <p id="loginNamesMsg" class="text-xs text-gold text-center leading-relaxed"></p>
-        <div>
-          <label class="block text-xs uppercase tracking-wider text-golddim mb-1">First Name</label>
-          <input id="loginFirst" type="text" autocomplete="off"
-            class="w-full bg-surface border border-line rounded-lg px-4 py-3 text-text placeholder-muted focus:border-gold focus:outline-none" placeholder="First name" />
-        </div>
         <div>
           <label class="block text-xs uppercase tracking-wider text-golddim mb-1">Last Name</label>
           <input id="loginLast" type="text" autocomplete="off"
@@ -149,23 +148,23 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v20</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v22</p>
   </div>
 </section>
 
 <!-- =====================================================================
      CHOOSE-YOUR-PIN VIEW
-     Shown after signing in with the starter PIN (12345) or a legacy
-     4-digit PIN. Unskippable: from here on, the PIN is the whole login.
+     Shown after signing in with the shared starter PIN (12345).
+     Unskippable: from here on, first name + this PIN is the sign-in.
 ====================================================================== -->
 <section id="view-pinchange" class="hidden min-h-screen flex flex-col items-center justify-center px-6 py-10">
   <div class="w-full max-w-sm fade-in text-center">
     <div id="pinLogo" class="flex justify-center mb-4"></div>
     <h2 class="font-display text-2xl text-text">Choose your PIN</h2>
-    <p class="text-muted text-sm mt-2 leading-relaxed">Pick a 5-digit code only you know. From now on it's your whole sign-in: no name, just the PIN.</p>
+    <p class="text-muted text-sm mt-2 leading-relaxed">Pick a 4 or 5 digit code only you know. From now on you sign in with your first name and this PIN.</p>
     <input id="newPin1" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5"
       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
-      class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none mt-6" placeholder="New 5-digit PIN" />
+      class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none mt-6" placeholder="New PIN" />
     <input id="newPin2" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="5"
       autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
       class="pin-mask w-full bg-surface border border-line rounded-lg px-4 py-3 text-text text-center tracking-[0.5em] placeholder-muted focus:border-gold focus:outline-none mt-3" placeholder="Type it again" />
@@ -279,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 21;           // shown on the login screen; bump with each release
+const APP_VERSION = 22;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -308,7 +307,7 @@ const S = {
   manual: null,          // trainee manual from the four Manual sheet tabs (null until served)
   closeoutQs: [],        // end-of-day questions (editable in the sheet)
   trainerQs: [],         // trainer sign-off questions (editable in the sheet)
-  training: { view: 'path', phase: null, sop: null, check: null, back: null, shiftClosing: 0 },
+  training: { view: 'path', phase: null, shift: null, sop: null, check: null, back: null, shiftClosing: 0 },
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
 };
@@ -717,25 +716,26 @@ window.addEventListener('DOMContentLoaded', () => {
 async function handleLogin(e){
   e.preventDefault();
   hide($('loginError'));
+  const first = $('loginFirst').value.trim();
   const pin = $('loginPin').value.trim();
+  if(!first) return loginError('Enter your first name.');
   if(!/^\d{4,5}$/.test(pin)) return loginError('Enter your PIN.');
-  const namesShown = !$('loginNames').classList.contains('hidden');
+  const lastShown = !$('loginNames').classList.contains('hidden');
 
   showLoader('Signing you in…');
   try {
     let r;
-    if(namesShown){
-      const first = $('loginFirst').value.trim();
-      const last  = $('loginLast').value.trim();
-      if(!first || !last){ hideLoader(); return loginError('Please fill in your first and last name.'); }
+    if(lastShown){
+      const last = $('loginLast').value.trim();
+      if(!last){ hideLoader(); return loginError('Please add your last name.'); }
       r = await doLogin(first, last, pin);
     } else {
-      r = await doLoginByPin(pin);
+      r = await doLoginByFirst(first, pin);
       if(!r.ok && r.need_name){
-        // Starter PIN, legacy 4-digit PIN, or a duplicate: ask who they are,
-        // one time only.
+        // Two people share this first name and PIN (or the shared starter):
+        // the last name settles it, one time only.
         hideLoader();
-        showLoginNames('Almost there. Enter your name too, just this once.');
+        showLoginNames('Add your last name too, just this once.');
         return;
       }
     }
@@ -751,7 +751,7 @@ function showLoginNames(msg){
   const w = $('loginNames');
   show(w);
   $('loginNamesMsg').textContent = msg || '';
-  $('loginFirst').focus();
+  $('loginLast').focus();
 }
 // Where a fresh sign-in lands: straight into the app, unless they're still
 // on a starter or legacy PIN — then they choose their own first.
@@ -774,6 +774,42 @@ async function doLogin(first, last, pin){
   }
   if(!r.ok) return { ok:false, error:r.error };
   return finishLogin(r, pin);
+}
+
+// The standard path: first name + PIN identifies the person. Falls back to
+// the older login flows when the server has not been updated yet.
+async function doLoginByFirst(first, pin){
+  let r;
+  try {
+    r = await apiPost({ action:'loginByFirst', first, pin });
+  } catch(e){
+    const off = tryOfflineLoginByFirst(first, pin);
+    if(off) return off;
+    throw e;
+  }
+  if(!r.ok && /unknown action/i.test(r.error || '')){
+    // Backend predates first-name login. A 5-digit PIN can still identify
+    // by itself; otherwise the full-name form takes over.
+    if(/^\d{5}$/.test(pin)) return doLoginByPin(pin);
+    return { ok:false, need_name:true };
+  }
+  if(!r.ok) return { ok:false, error:r.error, need_name: !!r.need_name };
+  return finishLogin(r, pin);
+}
+// Offline first-name sign-in against the cached snapshots on this device.
+function tryOfflineLoginByFirst(first, pin){
+  if(!/^\d{4,5}$/.test(pin) || pin === '12345') return null;
+  for(let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k || k.indexOf('bonsake_usercache_') !== 0) continue;
+    let u = null;
+    try { u = JSON.parse(localStorage.getItem(k) || 'null'); } catch(e){ u = null; }
+    if(u && u.pin === pin && u.user &&
+       String(u.user.first_name || '').toLowerCase() === first.toLowerCase()){
+      return tryOfflineLogin(u.user.first_name, u.user.last_name, pin);
+    }
+  }
+  return null;
 }
 
 // PIN-only path: the activated 5-digit PIN identifies the person by itself.
@@ -943,9 +979,9 @@ function pinChangeError(msg){ const el = $('pinChangeError'); el.textContent = m
 async function submitNewPin(){
   hide($('pinChangeError'));
   const p1 = $('newPin1').value.trim(), p2 = $('newPin2').value.trim();
-  if(!/^\d{5}$/.test(p1)) return pinChangeError('Your PIN must be exactly 5 digits.');
-  if(p1 === '12345')      return pinChangeError('12345 is the shared starter PIN. Pick your own.');
-  if(p1 !== p2)           return pinChangeError('The two entries do not match. Try again.');
+  if(!/^\d{4,5}$/.test(p1)) return pinChangeError('Your PIN must be 4 or 5 digits.');
+  if(p1 === '12345')        return pinChangeError('12345 is the shared starter PIN. Pick your own.');
+  if(p1 !== p2)             return pinChangeError('The two entries do not match. Try again.');
   showLoader('Saving your PIN…');
   try {
     const r = await apiSend({ action:'changePin', first:S.user.first_name, last:S.user.last_name, pin:S.pin, new_pin:p1 });
@@ -955,7 +991,7 @@ async function submitNewPin(){
     saveSession(S.user.first_name, S.user.last_name, p1);
     userCacheSave(S.user.first_name, S.user.last_name, p1);
     hide($('view-pinchange'));
-    toast('PIN saved. From now on, just your PIN signs you in.');
+    toast('PIN saved. From now on, your first name and PIN sign you in.');
     enterApp();
   } catch(e){
     hideLoader();
@@ -1041,8 +1077,8 @@ function logout(){
   S.test = null;
   S.user = null; S.pin = null; S.results = []; S.managerData = null;
   S.dishNotes = {}; S.testBrowse = { section:null }; S.floorBrowse = { room:null };
-  S.training = { view:'path', phase:null, sop:null, check:null, back:null, shiftClosing:0 };
-  S._practice = null; S._styleFill = {}; S.duty = null;
+  S.training = { view:'path', phase:null, shift:null, sop:null, check:null, back:null, shiftClosing:0 };
+  S._practice = null; S._styleFill = {}; S._fromTraining = false; S.duty = null;
   _dutyJob = null; _dutyLists = []; _dutyParticipants = []; _dutySel = { rooms:[], tables:[] };
   clearTimeout(_idleTimer);
   progressView = 'me';
@@ -1189,6 +1225,7 @@ function switchTab(tab){
     pane.classList.toggle('hidden', !isActive);
   });
   applyNavLockStyles();
+  if(tab !== 'floor') S._fromTraining = false;   // the floor's back-to-training chip only survives the trip it came from
   if(tab === 'training') renderTraining();
   if(tab === 'study')    renderStudy();
   if(tab === 'floor')    renderFloor();
@@ -1210,7 +1247,7 @@ function switchTab(tab){
 const TAB_HINTS = {
   study: 'Tip: open any dish and scroll to "Your Words" to keep tasting notes and see how the team describes it.',
   test:  'Tip: mastering dishes at Level 2 moves you up the leaderboard on the Progress tab.',
-  training: 'Tip: your Path tracks itself. Table tests, menu tests, and trainer checks light up here as you pass them.'
+  training: 'Tip: the Road tracks itself. Table tests, menu tests, and trainer checks light up here as you pass them.'
 };
 function hintSeen(tab){ try { return localStorage.getItem('bonsake_hint_' + tab) === '1'; } catch(e){ return true; } }
 function dismissHint(tab){
@@ -2299,9 +2336,18 @@ const MANUAL_BUILTIN = {
     { section:'pos', order:3, title:'Payment', body:'Split evenly, by seat, and across payment types|Take cash, card, mobile, gift card|Print itemized bills and receipts', note:'' },
     { section:'pos', order:4, title:'End of Shift', body:'Adjust and enter tips|Close checks clean|Run the shift report and reconcile', note:'' },
     { section:'floor', order:1, title:'The Floor', body:'The Table Test is a blank floor plan completed from memory: every table number, every room. The maps live in the Floor tab; study them until you can place every table without looking.', note:'' },
-    { section:'minimums', order:1, title:'Server Minimums', body:'Your minimums are the dish counts that earn you tables. They are tracked live below and on your Path; a manager sets the numbers.', note:'' },
-    { section:'problems', order:1, title:'The Top Table Problems', body:'Not every situation is identical, and the manager may call an audible for a reason. We still plan for eighty percent of things.', note:'' },
-    { section:'done', order:1, title:'What Done Means', body:"Every check passed, your trainer's evaluation passed, and your selling goals set and recorded. Your trainer and manager sign it because they watched you do it.\nThen you are a server. Congratulations.", note:'' }
+    { section:'minimums', order:1, title:'Server Minimums', body:'Your minimums are the dish counts that earn you tables. They are tracked live below and on your Road; a manager sets the numbers.', note:'' },
+    { section:'problems', order:1, title:'The Top Table Problems', body:'Not every situation is identical, and the manager may call an audible for a reason. We still plan for eighty percent of things.', note:'' }
+  ],
+  shiftPlans: [
+    { shift:1, title:'Bussing, day one', plan:['Meet the team and walk all four rooms.','Watch a full table: set, water, clear, turn.','Do it with your trainer watching.','Show it back at the end of the shift.'] },
+    { shift:2, title:'Bussing, all night', plan:["First hour: yesterday's questions, cleared up.","Run the room at your shift lead's direction, on their tables and everybody's.",'Own water, pre-bussing, and turns.'] },
+    { shift:3, title:'The Busser Check', plan:['Run the opening and closing duty lists.','Show every busser skill without coaching.','A manager or shift lead runs the Busser Check on the floor. Pass it and you start running food.'] },
+    { shift:4, title:'Running, day one', plan:['First hour: table numbers and sections.','Read tickets and seat numbers with your trainer.','Run the window together. Bussing never stops.'] },
+    { shift:5, title:'Running, all night', plan:['Time the two kitchens.','Run food to every table by seat number. No auctions.','Start learning the POS.'] },
+    { shift:6, title:'The Runner Check', plan:['Pass the Table Test: the whole floor from memory.','The Runner Check runs on the floor.','Keep building your Menu Test. It earns you tables.'] },
+    { shift:7, title:'First Section, with backup', plan:['First hour at the host stand.','Own a small section with your trainer beside you.','Tour the menu, make suggestions, ring it in right.'] },
+    { shift:8, title:'The Skill Out', plan:['Run your section start to finish.','Pass the Server Skill Out at ninety percent or above.','Set your selling goals. Then you are a server.'] }
   ]
 };
 
@@ -2376,28 +2422,25 @@ function totalTrainingShifts(){
   return mx || 8;
 }
 
-/* ---- Personal ticks (kept on this device, per person) -------------------- */
+/* ---- Per-person device flags (the read marker on How We Work) ------------- */
 function trUserKey(){ return S.user ? (S.user.first_name + '_' + S.user.last_name).toLowerCase() : 'anon'; }
 function trStoreKey(k){ return 'bonsake_train_' + trUserKey() + '_' + k; }
-function trChecks(k){
-  try { const a = JSON.parse(localStorage.getItem(trStoreKey(k)) || '[]'); return Array.isArray(a) ? a : []; }
-  catch(e){ return []; }
-}
-function trToggleTask(k, i){
-  const a = trChecks(k);
-  a[i] = a[i] ? 0 : 1;
-  try { localStorage.setItem(trStoreKey(k), JSON.stringify(a)); } catch(e){}
-  renderTraining();
-}
 
 /* ---- Navigation ---------------------------------------------------------- */
 function trGo(view, arg, back){
   S.training.view = view;
   if(view === 'phase') S.training.phase = arg;
+  if(view === 'shift') S.training.shift = arg;
   if(view === 'sop'){ S.training.sop = arg; S.training.back = back || 'sops'; }
   if(view === 'check') S.training.check = arg;
   renderTraining();
   window.scrollTo(0, 0);
+}
+// Jumping to the Floor tab from training arms a way back (Steven: "there is
+// no easy way to get back to the training").
+function goFloorFromTraining(){
+  S._fromTraining = true;
+  switchTab('floor');
 }
 
 function renderTraining(){
@@ -2405,6 +2448,7 @@ function renderTraining(){
   if(v === 'how')      return trHow();
   if(v === 'handbook') return trHandbook();
   if(v === 'phase')    return trPhase();
+  if(v === 'shift')    return trShift();
   if(v === 'sops')     return trSopList();
   if(v === 'sop')      return trSop();
   if(v === 'sopdrill') return trSopDrill();
@@ -2414,7 +2458,6 @@ function renderTraining(){
   if(v === 'pos')      return trPos();
   if(v === 'minimums') return trMinimums();
   if(v === 'problems') return trProblems();
-  if(v === 'done')     return trDone();
   if(v === 'check')    return trCheckFlow();
   return trPath();
 }
@@ -2442,7 +2485,7 @@ function trCpRows(cps, withActions){
         ${withActions ? `<button onclick="trGo('check','${c.id}')" class="text-xs text-gold border border-gold rounded-full px-3 py-1">Hand to your trainer →</button>`
                       : `<span class="text-xs text-muted">with your trainer</span>`}</div>`;
     }
-    const goTab = c.type === 'rooms' ? 'floor' : 'test';
+    const goCall = c.type === 'rooms' ? 'goFloorFromTraining()' : "switchTab('test')";
     const goLabel = c.type === 'rooms' ? 'Take the Table Test →' : 'Work on the Menu Test →';
     return `<div class="py-2 border-t border-line/50 first:border-t-0">
       <div class="flex items-center justify-between mb-1">
@@ -2450,12 +2493,28 @@ function trCpRows(cps, withActions){
         <span class="text-xs ${c.done ? 'text-pass font-medium' : 'text-muted'}">${c.done ? '✓ Done' : c.count + ' of ' + c.total + ' ' + c.unit}</span>
       </div>
       ${trMeter(c.count, c.total)}
-      ${withActions && !c.done ? `<button onclick="switchTab('${goTab}')" class="mt-2 text-xs text-gold">${goLabel}</button>` : ''}
+      ${withActions && !c.done ? `<button onclick="${goCall}" class="mt-2 text-xs text-gold">${goLabel}</button>` : ''}
     </div>`;
   }).join('');
 }
 
-/* ---- The Path (Training home) -------------------------------------------- */
+/* ---- The Road (Training home) -------------------------------------------- */
+// The shift-by-shift plans from the Shift Plans sheet (with builtin fallback).
+function manualShiftPlans(){
+  const sp = manual().shiftPlans;
+  return (sp && sp.length) ? sp : (MANUAL_BUILTIN.shiftPlans || []);
+}
+function shiftPlanFor(n){ return manualShiftPlans().filter(s => s.shift === n)[0] || null; }
+// Which phase a shift number belongs to, from the phase's own shifts text.
+function phaseForShift(n){
+  const ph = manual().phases;
+  for(let i = 0; i < ph.length; i++){
+    const nums = (String(ph[i].shifts).match(/\d+/g) || []).map(Number);
+    if(nums.length && n >= Math.min.apply(null, nums) && n <= Math.max.apply(null, nums)) return ph[i];
+  }
+  return null;
+}
+
 function trPath(){
   const pane = $('tab-training');
   const phases = trainingPhases();
@@ -2477,6 +2536,30 @@ function trPath(){
   if(isTrainee && shift) sub.push('Shift ' + shift + ' of ' + totalTrainingShifts());
   if(isTrainee && S.user.assigned_trainer) sub.push('with ' + esc(S.user.assigned_trainer));
 
+  // Shift-by-shift strip: every shift on the road, tappable, with the done
+  // ones filled in from close-outs and the current one ringed in gold.
+  const totalShifts = phases.length ? totalTrainingShifts() : 0;
+  let shiftStrip = '';
+  if(totalShifts && manualShiftPlans().length){
+    const chips = [];
+    for(let n = 1; n <= totalShifts; n++){
+      const done = isTrainee && shift !== null && n < shift;
+      const cur  = isTrainee && shift !== null && n === shift;
+      chips.push(`<button onclick="trGo('shift',${n})" aria-label="Shift ${n}"
+        class="w-9 h-9 rounded-full border text-sm font-semibold flex items-center justify-center flex-shrink-0
+        ${done ? 'bg-gold border-gold text-bg' : cur ? 'border-gold text-gold' : 'border-line text-muted'}">${done ? '✓' : n}</button>`);
+    }
+    const curPlan = (isTrainee && shift !== null) ? shiftPlanFor(shift) : null;
+    shiftStrip = `<div class="bg-surface border border-line rounded-xl p-4">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-2.5">Shift by Shift</p>
+      <div class="flex gap-2 flex-wrap">${chips.join('')}</div>
+      ${curPlan ? `<button onclick="trGo('shift',${shift})" class="mt-3 w-full flex items-center justify-between text-left">
+        <span class="text-sm text-text">Tonight: <span class="font-medium">${esc(curPlan.title)}</span></span>
+        <span class="text-gold text-sm ml-3">→</span>
+      </button>` : `<p class="text-xs text-muted mt-2.5">Tap a shift to see what it holds.</p>`}
+    </div>`;
+  }
+
   const phaseCards = phases.map(p => {
     const cps = phaseCheckpoints(p.order);
     const done = isTrainee && cps.length > 0 && cps.every(c => c.done);
@@ -2493,20 +2576,20 @@ function trPath(){
     </button>`;
   }).join('');
 
-  const doneCard = allDone ? `<button onclick="trGo('done')" class="block w-full text-left bg-surface border border-gold rounded-xl p-4">
-    <p class="font-display text-xl text-pass">The Path is complete.</p>
-    <p class="text-sm text-muted mt-1">Every check passed. See what done means →</p>
-  </button>` : '';
+  const doneCard = allDone ? `<div class="bg-surface border border-pass rounded-xl p-5 text-center">
+    <p class="font-display text-2xl text-pass">The Road is complete.</p>
+    <p class="text-sm text-muted mt-1.5">Every check passed, watched and signed by the people who trained you. Welcome to the floor.</p>
+  </div>` : '';
 
   const noPhaseNote = (!phases.length && isTrainee)
     ? `<div class="bg-surface border border-line rounded-xl p-4">
         <p class="text-sm text-text">Your ${esc(S.user.training_for)} training runs shift by shift with your trainer.</p>
-        <p class="text-xs text-muted mt-1">The Handbook below is your reference, and you still close out every training day here.</p></div>`
+        <p class="text-xs text-muted mt-1">Everything below is your reference, and you still close out every training day here.</p></div>`
     : '';
 
   pane.innerHTML = `
-    <h2 class="font-display text-2xl text-text mb-1">Your Path to Serving</h2>
-    ${sub.length ? `<p class="text-muted text-sm mb-4">${sub.join(' · ')}</p>` : `<p class="text-muted text-sm mb-4">The trainee manual, live.</p>`}
+    <h2 class="font-display text-2xl text-text mb-1">The Road to Serving</h2>
+    ${sub.length ? `<p class="text-muted text-sm mb-4">${sub.join(' · ')}</p>` : `<div class="mb-4"></div>`}
     <div class="space-y-3">
       <button onclick="trGo('how')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
         <div class="flex items-center justify-between">
@@ -2517,14 +2600,43 @@ function trPath(){
       </button>
       ${doneCard}
       ${noPhaseNote}
+      ${shiftStrip}
       ${phaseCards}
       <button onclick="trGo('handbook')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
-        <p class="text-sm text-text font-medium">The Handbook</p>
+        <p class="text-sm text-text font-medium">The Back Pocket</p>
         <p class="text-xs text-muted mt-0.5">SOPs · Steps of Service · Your Sell · The POS</p>
       </button>
     </div>
     ${isTrainee ? `<button onclick="startCloseout()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}
     ${(!isTrainee && isTrainerUser()) ? `<p class="text-xs text-muted mt-5">You are viewing the trainee manual as a ${isManager() ? 'manager' : 'trainer'}. Trainees see live progress here.</p>` : ''}`;
+}
+
+/* ---- One shift: what tonight holds ---------------------------------------- */
+function trShift(){
+  const pane = $('tab-training');
+  const n = S.training.shift;
+  const plan = shiftPlanFor(n);
+  if(!plan){ trGo('path'); return; }
+  const phase = phaseForShift(n);
+  const isTrainee = !!(S.user && S.user.training_for);
+  const shift = currentTrainingShift();
+  const isTonight = isTrainee && shift !== null && n === shift;
+  const bullets = plan.plan.map(b => `
+    <div class="flex gap-2.5 py-2 border-t border-line/50 first:border-t-0">
+      <span class="text-gold flex-shrink-0">·</span>
+      <span class="text-sm text-text leading-relaxed">${esc(b)}</span>
+    </div>`).join('');
+  pane.innerHTML = `
+    ${trBackBtn('The Road', 'path')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Shift ${n} of ${totalTrainingShifts()}${phase ? ` · ${esc(phase.principle)}` : ''}${isTonight ? ' · Tonight' : ''}</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(plan.title)}</h2>
+    <div class="bg-surface border ${isTonight ? 'border-gold' : 'border-line'} rounded-xl px-4 py-2 mb-3">${bullets}</div>
+    ${phase ? `<button onclick="trGo('phase',${phase.order})" class="w-full flex items-center justify-between bg-surface border border-line rounded-xl px-4 py-3 text-left">
+      <div><p class="text-xs uppercase tracking-wider text-golddim">${esc(phase.shifts)}</p>
+      <p class="text-sm text-text font-medium mt-0.5">${esc(phase.title)}: the whole picture</p></div>
+      <span class="text-gold text-sm ml-3">→</span>
+    </button>` : ''}
+    ${isTonight ? `<button onclick="startCloseout()" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}`;
 }
 
 /* ---- How We Work (principles + method) ----------------------------------- */
@@ -2543,7 +2655,7 @@ function trHow(){
       ${fmtContent(p.body)}</div>
     </div>`).join('');
   pane.innerHTML = `
-    ${trBackBtn('Your Path', 'path')}
+    ${trBackBtn('The Road', 'path')}
     <p class="text-xs uppercase tracking-wider text-golddim">Three Principles</p>
     <h2 class="font-display text-2xl text-text mb-3 mt-0.5">How We Work</h2>
     <div class="space-y-3 mb-6">${principles}</div>
@@ -2557,13 +2669,11 @@ function trPhase(){
   const p = manual().phases.filter(x => x.order === S.training.phase)[0];
   if(!p){ trGo('path'); return; }
   const isTrainee = !!(S.user && S.user.training_for);
-  const jobKey = 'job_' + p.order;
-  const ticks = trChecks(jobKey);
-  const job = p.job.map((j, i) => `
-    <button onclick="trToggleTask('${jobKey}',${i})" class="w-full flex items-start gap-2.5 py-2 border-t border-line/50 first:border-t-0 text-left">
-      <span class="mt-0.5 w-4 h-4 rounded border ${ticks[i] ? 'bg-gold border-gold text-bg' : 'border-line'} flex-shrink-0 flex items-center justify-center text-[10px] font-bold leading-none">${ticks[i] ? '✓' : ''}</span>
-      <span class="text-sm ${ticks[i] ? 'text-text' : 'text-muted'}">${esc(j)}</span>
-    </button>`).join('');
+  const job = p.job.map(j => `
+    <div class="flex gap-2.5 py-2 border-t border-line/50 first:border-t-0">
+      <span class="text-gold flex-shrink-0">·</span>
+      <span class="text-sm text-text leading-relaxed">${esc(j)}</span>
+    </div>`).join('');
   const effect = p.effect.map(e => `<p class="text-sm text-text leading-relaxed border-l-2 border-gold pl-3 mb-2">${esc(e)}</p>`).join('');
   const tools = p.tools.map(t => `<span class="inline-block bg-chip border border-line rounded-full px-3 py-1 text-xs text-text mr-1.5 mb-1.5">${esc(t)}</span>`).join('');
   const sops = phaseSops(p.order);
@@ -2574,14 +2684,13 @@ function trPhase(){
     </button>`).join('');
   const cps = phaseCheckpoints(p.order);
   pane.innerHTML = `
-    ${trBackBtn('Your Path', 'path')}
+    ${trBackBtn('The Road', 'path')}
     <p class="text-xs uppercase tracking-wider text-golddim">${esc(p.shifts)} · ${esc(p.principle)}</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(p.title)}</h2>
     ${fmtContent(p.narrative)}
     <div class="space-y-3 mt-4">
       <div class="bg-surface border border-line rounded-xl p-4">
         <p class="text-xs uppercase tracking-wider text-golddim mb-1">The Job</p>
-        <p class="text-xs text-muted mb-1">Tap what you can already do.</p>
         ${job}
       </div>
       <div class="bg-surface border border-line rounded-xl p-4">
@@ -2593,7 +2702,7 @@ function trPhase(){
         ${tools}
       </div>
       ${sops.length ? `<div class="bg-surface border border-line rounded-xl p-4">
-        <p class="text-xs uppercase tracking-wider text-golddim mb-1">The Way We Do It</p>
+        <p class="text-xs uppercase tracking-wider text-golddim mb-1">Our Way</p>
         ${sopRows}
       </div>` : ''}
       ${cps.length ? `<div class="bg-surface border ${isTrainee ? 'border-gold' : 'border-line'} rounded-xl p-4">
@@ -2622,20 +2731,19 @@ function isTrainerUser(){
   return !!(S.user && (S.user.trainer || String(S.user.role || '').toLowerCase() === 'manager'));
 }
 
-/* ---- The Handbook (always-available reference) --------------------------- */
+/* ---- The Back Pocket (always-available reference) ------------------------- */
 function trHandbook(){
   const pane = $('tab-training');
   const rows = [
     ['sos',      'Steps of Service',    '11 table touches, each with an owner'],
-    ['sops',     'The Way We Do It',    'The SOPs: why, when, and the steps'],
+    ['sops',     'Our Way',             'The SOPs: why, when, and the steps'],
     ['style',    "The Server's Style",  'Make a friend, tour the menu, your scripts'],
-    ['pos',      'The POS Basics',      'What you can do on the register'],
+    ['pos',      'The POS Basics',      'What the register will ask of you'],
     ['floorpg',  'The Floor',           'The maps and the Table Test'],
     ['minimums', 'Server Minimums',     'The dish counts that earn you tables'],
-    ['problems', 'The Top Table Problems', 'The plan for when things go sideways'],
-    ['done',     'What Done Means',     'How training ends']
+    ['problems', 'The Top Table Problems', 'The plan for when things go sideways']
   ].map(r => {
-    const go = r[0] === 'floorpg' ? `switchTab('floor')` : `trGo('${r[0]}')`;
+    const go = r[0] === 'floorpg' ? 'goFloorFromTraining()' : `trGo('${r[0]}')`;
     return `<button onclick="${go}" class="w-full flex items-center justify-between py-3 border-t border-line/50 first:border-t-0 text-left">
       <div><p class="text-sm text-text font-medium">${r[1]}</p>
       <p class="text-xs text-muted mt-0.5">${r[2]}</p></div>
@@ -2643,8 +2751,8 @@ function trHandbook(){
     </button>`;
   }).join('');
   pane.innerHTML = `
-    ${trBackBtn('Your Path', 'path')}
-    <h2 class="font-display text-2xl text-text mb-3">The Handbook</h2>
+    ${trBackBtn('The Road', 'path')}
+    <h2 class="font-display text-2xl text-text mb-3">The Back Pocket</h2>
     <div class="bg-surface border border-line rounded-xl px-4 py-1">${rows}</div>`;
 }
 
@@ -2667,8 +2775,8 @@ function trSopList(){
         </button>`).join('')}
     </div>`).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
-    <h2 class="font-display text-2xl text-text mb-1">The Way We Do It</h2>
+    ${trBackBtn('The Back Pocket', 'handbook')}
+    <h2 class="font-display text-2xl text-text mb-1">Our Way</h2>
     <p class="text-muted text-sm">Every procedure keeps its why next to its steps. Read it, then practice the order.</p>
     ${groups}`;
 }
@@ -2684,7 +2792,7 @@ function trSop(){
     </div>`).join('');
   pane.innerHTML = `
     <button onclick="${back}" class="text-gold text-sm mb-3">&larr; Back</button>
-    <p class="text-xs uppercase tracking-wider text-golddim">${esc(s.role)} · The Way We Do It</p>
+    <p class="text-xs uppercase tracking-wider text-golddim">${esc(s.role)} · Our Way</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(s.title)}</h2>
     <div class="space-y-2.5 mb-3">
       <div class="border-l-2 border-gold bg-surface rounded-r-xl px-3.5 py-2.5">
@@ -2786,7 +2894,7 @@ function trSos(){
     </div>`).join('');
   const upkeep = manualPages('upkeep')[0];
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
+    ${trBackBtn('The Back Pocket', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-1">Steps of Service</h2>
     <p class="text-muted text-sm mb-3">We count service in table touches. Every intentional interaction with a guest is a step, and every step has an owner.</p>
@@ -2925,7 +3033,7 @@ function trStyle(){
     </button>`;
   }).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
+    ${trBackBtn('The Back Pocket', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-4">The Server's Style</h2>
     <p class="text-xs uppercase tracking-wider text-golddim mb-1.5">The First Minutes</p>
@@ -2943,27 +3051,25 @@ function cycleScript(order){
   renderTraining();
 }
 
-/* ---- POS Basics / Minimums / Problems / Done ------------------------------ */
+/* ---- POS Basics / Minimums / Problems ------------------------------------- */
 function trPos(){
   const pane = $('tab-training');
   const groups = manualPages('pos').map(g => {
     const items = String(g.body || '').split('|').map(s => s.trim()).filter(s => s.length > 0);
-    const key = 'pos_' + g.order;
-    const ticks = trChecks(key);
     return `<div class="bg-surface border border-line rounded-xl p-4">
       <p class="text-xs uppercase tracking-wider text-golddim mb-1">${esc(g.title)}</p>
-      ${items.map((it, i) => `
-        <button onclick="trToggleTask('${key}',${i})" class="w-full flex items-start gap-2.5 py-2 border-t border-line/50 first:border-t-0 text-left">
-          <span class="mt-0.5 w-4 h-4 rounded border ${ticks[i] ? 'bg-gold border-gold text-bg' : 'border-line'} flex-shrink-0 flex items-center justify-center text-[10px] font-bold leading-none">${ticks[i] ? '✓' : ''}</span>
-          <span class="text-sm ${ticks[i] ? 'text-text' : 'text-muted'} leading-relaxed">${esc(it)}</span>
-        </button>`).join('')}
+      ${items.map(it => `
+        <div class="flex gap-2.5 py-2 border-t border-line/50 first:border-t-0">
+          <span class="text-gold flex-shrink-0">·</span>
+          <span class="text-sm text-text leading-relaxed">${esc(it)}</span>
+        </div>`).join('')}
     </div>`;
   }).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
+    ${trBackBtn('The Back Pocket', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-1">The POS Basics</h2>
-    <p class="text-muted text-sm mb-3">Tap what you can already do on the register. Your trainer walks the rest with you.</p>
+    <p class="text-muted text-sm mb-3">By the end of training, all of this is yours on the register.</p>
     <div class="space-y-3">${groups}</div>`;
 }
 function trMinimums(){
@@ -2976,12 +3082,12 @@ function trMinimums(){
       <span class="text-xs ${g.done ? 'text-pass font-medium' : 'text-muted'}">${g.done ? '✓ Done' : g.count + ' of ' + g.required}</span>
     </div>`).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
+    ${trBackBtn('The Back Pocket', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-2">Server Minimums</h2>
     ${page ? fmtContent(page.body) : ''}
     ${gp.groups.length ? `<div class="bg-surface border border-line rounded-xl px-4 py-1 mt-3">${rows}</div>
-      <button onclick="switchTab('test')" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Work on the Menu Test →</button>`
+      <button onclick="switchTab('study')" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Study the Menu →</button>`
     : `<p class="text-muted text-sm mt-3">A manager has not set the numbers yet. They appear here the moment that happens.</p>`}`;
 }
 function trProblems(){
@@ -2990,7 +3096,7 @@ function trProblems(){
   const intro = rows.filter(r => r.order === 1)[0];
   const items = rows.filter(r => r.order > 1);
   pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
+    ${trBackBtn('The Back Pocket', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-2">The Top Table Problems</h2>
     ${intro ? fmtContent(intro.body) : ''}
@@ -3001,23 +3107,6 @@ function trProblems(){
       </div>`).join('')}</div>`
     : `<p class="text-muted text-sm mt-3">The list is being written. Until it lands here, bring every odd situation to your manager; that is always the right move.</p>`}`;
 }
-function trDone(){
-  const pane = $('tab-training');
-  const page = manualPages('done')[0];
-  const phases = trainingPhases();
-  const isTrainee = !!(S.user && S.user.training_for);
-  const allDone = isTrainee && phases.length > 0 && phases.every(p => phaseComplete(p.order));
-  pane.innerHTML = `
-    ${trBackBtn('The Handbook', 'handbook')}
-    <p class="text-xs uppercase tracking-wider text-golddim">Completion</p>
-    <h2 class="font-display text-2xl text-text mt-0.5 mb-2">What Done Means</h2>
-    ${page ? fmtContent(page.body) : ''}
-    ${allDone ? `<div class="bg-surface border border-pass rounded-xl p-5 text-center mt-4">
-      <p class="font-display text-2xl text-pass">You did it.</p>
-      <p class="text-sm text-muted mt-1.5">Every check on your Path is passed. Welcome to the floor.</p>
-    </div>` : ''}`;
-}
-
 /* ---- On-floor checks: hand the device to a trainer ------------------------ */
 const CHECK_LABELS = { busser:'Busser Check', runner:'Runner Check', skillout:'Server Skill Out' };
 const CHECK_NEXT = {
@@ -3076,7 +3165,7 @@ async function submitTrainerCheck(){
       <div class="max-w-md mx-auto text-center mt-10 fade-in">
         <p class="font-display text-3xl text-pass">${esc(label)} passed.</p>
         <p class="text-sm text-muted mt-3">${esc(CHECK_NEXT[id] || '')}</p>
-        <button onclick="trGo('path')" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Back to My Path →</button>
+        <button onclick="trGo('path')" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Back to the Road →</button>
       </div>`;
   } catch(e){
     hideLoader();
@@ -3248,6 +3337,16 @@ function renderRoomMap(room, opts){
   </div>`;
 }
 
+// Shown when the Floor was reached from the Training tab: one tap back.
+function floorTrainingChip(){
+  return S._fromTraining
+    ? `<button onclick="backToTrainingFromFloor()" class="w-full border border-gold text-gold text-sm font-medium py-2.5 rounded-lg mb-4">&larr; Back to Training</button>`
+    : '';
+}
+function backToTrainingFromFloor(){
+  S._fromTraining = false;
+  switchTab('training');
+}
 function renderFloor(){
   const pane = $('tab-floor');
   const rooms = floorRooms();
@@ -3265,6 +3364,7 @@ function renderFloor(){
       </button>`;
     }).join('');
     pane.innerHTML = `
+      ${floorTrainingChip()}
       <h2 class="font-display text-2xl text-text mb-1">Know the Floor</h2>
       <p class="text-muted text-sm mb-4">Every table, room by room. Study the numbers here, then prove it. Pass every room to be cleared to run food.</p>
       <div class="grid grid-cols-2 gap-3">${cards}</div>`;
@@ -3275,6 +3375,7 @@ function renderFloor(){
     <button onclick="selectFloorRoom(${i})"
       class="text-xs rounded-full px-3 py-1.5 border transition-colors mr-2 mb-2 ${r===room?'border-gold bg-gold text-bg font-semibold':'border-line bg-surface text-text'}">${esc(r)}</button>`).join('');
   pane.innerHTML = `
+    ${floorTrainingChip()}
     <button onclick="selectFloorRoom(-1)" class="text-gold text-sm mb-3">&larr; Rooms</button>
     <h2 class="font-display text-2xl text-text mb-2">${esc(room)}</h2>
     <div class="mb-2">${pills}</div>

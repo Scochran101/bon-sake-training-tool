@@ -148,7 +148,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v22</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3">app v23</p>
   </div>
 </section>
 
@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 22;           // shown on the login screen; bump with each release
+const APP_VERSION = 23;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -2447,6 +2447,7 @@ function renderTraining(){
   const v = S.training.view || 'path';
   if(v === 'how')      return trHow();
   if(v === 'handbook') return trHandbook();
+  if(v === 'meet')     return trMeetTeam();
   if(v === 'phase')    return trPhase();
   if(v === 'shift')    return trShift();
   if(v === 'sops')     return trSopList();
@@ -2464,7 +2465,7 @@ function renderTraining(){
 
 /* ---- Small shared pieces ------------------------------------------------- */
 function trBackBtn(label, view){
-  return `<button onclick="trGo('${view}')" class="text-gold text-sm mb-3">&larr; ${label}</button>`;
+  return `<button onclick="trGo('${view}')" class="text-gold text-sm mb-3">&larr; ${esc(label)}</button>`;
 }
 function trMeter(count, total){
   const pct = total ? Math.round((count / total) * 100) : 0;
@@ -2536,45 +2537,27 @@ function trPath(){
   if(isTrainee && shift) sub.push('Shift ' + shift + ' of ' + totalTrainingShifts());
   if(isTrainee && S.user.assigned_trainer) sub.push('with ' + esc(S.user.assigned_trainer));
 
-  // Shift-by-shift strip: every shift on the road, tappable, with the done
-  // ones filled in from close-outs and the current one ringed in gold.
+  // One button per shift, top to bottom: done ones checked off from
+  // close-outs, tonight ringed in gold, later shifts dimmed but readable.
   const totalShifts = phases.length ? totalTrainingShifts() : 0;
-  let shiftStrip = '';
+  const shiftCards = [];
   if(totalShifts && manualShiftPlans().length){
-    const chips = [];
     for(let n = 1; n <= totalShifts; n++){
+      const plan = shiftPlanFor(n);
       const done = isTrainee && shift !== null && n < shift;
       const cur  = isTrainee && shift !== null && n === shift;
-      chips.push(`<button onclick="trGo('shift',${n})" aria-label="Shift ${n}"
-        class="w-9 h-9 rounded-full border text-sm font-semibold flex items-center justify-center flex-shrink-0
-        ${done ? 'bg-gold border-gold text-bg' : cur ? 'border-gold text-gold' : 'border-line text-muted'}">${done ? '✓' : n}</button>`);
+      shiftCards.push(`<button onclick="trGo('shift',${n})" class="block w-full text-left bg-surface border ${cur?'border-gold':'border-line'} rounded-xl px-4 py-3 ${(!isTrainee||done||cur)?'':'opacity-60'}">
+        <div class="flex items-center gap-3">
+          <span class="w-8 h-8 rounded-full border ${done?'bg-gold border-gold text-bg':cur?'border-gold text-gold':'border-line text-muted'} flex items-center justify-center text-sm font-semibold flex-shrink-0">${done ? '✓' : n}</span>
+          <div class="flex-1">
+            <p class="text-xs uppercase tracking-wider text-golddim">Shift ${n} Training${cur ? ' · Tonight' : ''}</p>
+            ${plan ? `<p class="text-sm text-text font-medium mt-0.5">${esc(plan.title)}</p>` : ''}
+          </div>
+          <span class="text-gold text-sm">→</span>
+        </div>
+      </button>`);
     }
-    const curPlan = (isTrainee && shift !== null) ? shiftPlanFor(shift) : null;
-    shiftStrip = `<div class="bg-surface border border-line rounded-xl p-4">
-      <p class="text-xs uppercase tracking-wider text-golddim mb-2.5">Shift by Shift</p>
-      <div class="flex gap-2 flex-wrap">${chips.join('')}</div>
-      ${curPlan ? `<button onclick="trGo('shift',${shift})" class="mt-3 w-full flex items-center justify-between text-left">
-        <span class="text-sm text-text">Tonight: <span class="font-medium">${esc(curPlan.title)}</span></span>
-        <span class="text-gold text-sm ml-3">→</span>
-      </button>` : `<p class="text-xs text-muted mt-2.5">Tap a shift to see what it holds.</p>`}
-    </div>`;
   }
-
-  const phaseCards = phases.map(p => {
-    const cps = phaseCheckpoints(p.order);
-    const done = isTrainee && cps.length > 0 && cps.every(c => c.done);
-    const isCurrent = isTrainee && p.order === current;
-    const status = !isTrainee ? '' :
-      done ? `<p class="text-xs text-pass font-medium mt-2">✓ Complete</p>` :
-      isCurrent ? `<div class="mt-3">${trCpRows(cps, false)}</div>
-        <div class="mt-3 w-full bg-gold text-bg font-semibold py-2.5 rounded-lg text-center text-sm">Continue · ${esc(p.title)} →</div>` :
-      `<p class="text-xs text-muted mt-2">Read ahead any time.</p>`;
-    return `<button onclick="trGo('phase',${p.order})" class="block w-full text-left bg-surface border ${isCurrent ? 'border-gold' : 'border-line'} rounded-xl p-4 ${(!isTrainee||done||isCurrent)?'':'opacity-60'}">
-      <p class="text-xs uppercase tracking-wider text-golddim">${esc(p.shifts)} · ${esc(p.principle)}</p>
-      <p class="font-display text-xl text-text mt-0.5">${esc(p.title)}</p>
-      ${status}
-    </button>`;
-  }).join('');
 
   const doneCard = allDone ? `<div class="bg-surface border border-pass rounded-xl p-5 text-center">
     <p class="font-display text-2xl text-pass">The Road is complete.</p>
@@ -2584,13 +2567,14 @@ function trPath(){
   const noPhaseNote = (!phases.length && isTrainee)
     ? `<div class="bg-surface border border-line rounded-xl p-4">
         <p class="text-sm text-text">Your ${esc(S.user.training_for)} training runs shift by shift with your trainer.</p>
-        <p class="text-xs text-muted mt-1">Everything below is your reference, and you still close out every training day here.</p></div>`
+        <p class="text-xs text-muted mt-1">Everything above is your reference, and you still close out every training day here.</p></div>`
     : '';
 
   pane.innerHTML = `
     <h2 class="font-display text-2xl text-text mb-1">The Road to Serving</h2>
     ${sub.length ? `<p class="text-muted text-sm mb-4">${sub.join(' · ')}</p>` : `<div class="mb-4"></div>`}
     <div class="space-y-3">
+      ${doneCard}
       <button onclick="trGo('how')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
         <div class="flex items-center justify-between">
           <div><p class="text-sm text-text font-medium">How We Work</p>
@@ -2598,14 +2582,15 @@ function trPath(){
           <span class="text-xs ${readHow ? 'text-pass' : 'text-gold'} font-medium">${readHow ? 'Read ✓' : 'Start here →'}</span>
         </div>
       </button>
-      ${doneCard}
-      ${noPhaseNote}
-      ${shiftStrip}
-      ${phaseCards}
       <button onclick="trGo('handbook')" class="block w-full text-left bg-surface border border-line rounded-xl px-4 py-3">
-        <p class="text-sm text-text font-medium">The Back Pocket</p>
-        <p class="text-xs text-muted mt-0.5">SOPs · Steps of Service · Your Sell · The POS</p>
+        <div class="flex items-center justify-between">
+          <div><p class="text-sm text-text font-medium">Our Systems &amp; Tools</p>
+          <p class="text-xs text-muted mt-0.5">Meet the Team · SOPs · Steps of Service · Your Sell · The POS</p></div>
+          <span class="text-gold text-sm">→</span>
+        </div>
       </button>
+      ${noPhaseNote}
+      ${shiftCards.join('')}
     </div>
     ${isTrainee ? `<button onclick="startCloseout()" class="mt-6 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Finish My Training Day →</button>` : ''}
     ${(!isTrainee && isTrainerUser()) ? `<p class="text-xs text-muted mt-5">You are viewing the trainee manual as a ${isManager() ? 'manager' : 'trainer'}. Trainees see live progress here.</p>` : ''}`;
@@ -2618,6 +2603,7 @@ function trShift(){
   const plan = shiftPlanFor(n);
   if(!plan){ trGo('path'); return; }
   const phase = phaseForShift(n);
+  if(phase) S.training.phase = phase.order;   // so check flows return to the right phase
   const isTrainee = !!(S.user && S.user.training_for);
   const shift = currentTrainingShift();
   const isTonight = isTrainee && shift !== null && n === shift;
@@ -2626,11 +2612,16 @@ function trShift(){
       <span class="text-gold flex-shrink-0">·</span>
       <span class="text-sm text-text leading-relaxed">${esc(b)}</span>
     </div>`).join('');
+  const cps = phase ? phaseCheckpoints(phase.order) : [];
   pane.innerHTML = `
     ${trBackBtn('The Road', 'path')}
     <p class="text-xs uppercase tracking-wider text-golddim">Shift ${n} of ${totalTrainingShifts()}${phase ? ` · ${esc(phase.principle)}` : ''}${isTonight ? ' · Tonight' : ''}</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-3">${esc(plan.title)}</h2>
     <div class="bg-surface border ${isTonight ? 'border-gold' : 'border-line'} rounded-xl px-4 py-2 mb-3">${bullets}</div>
+    ${cps.length ? `<div class="bg-surface border border-line rounded-xl p-4 mb-3">
+      <p class="text-xs uppercase tracking-wider text-golddim mb-1">${phase ? esc(phase.title) + ' ' : ''}Checkpoints</p>
+      ${isTrainee ? trCpRows(cps, true) : `<p class="text-xs text-muted">Checkpoints track live on a trainee's own screen.</p>`}
+    </div>` : ''}
     ${phase ? `<button onclick="trGo('phase',${phase.order})" class="w-full flex items-center justify-between bg-surface border border-line rounded-xl px-4 py-3 text-left">
       <div><p class="text-xs uppercase tracking-wider text-golddim">${esc(phase.shifts)}</p>
       <p class="text-sm text-text font-medium mt-0.5">${esc(phase.title)}: the whole picture</p></div>
@@ -2731,10 +2722,11 @@ function isTrainerUser(){
   return !!(S.user && (S.user.trainer || String(S.user.role || '').toLowerCase() === 'manager'));
 }
 
-/* ---- The Back Pocket (always-available reference) ------------------------- */
+/* ---- Our Systems & Tools (always-available reference) --------------------- */
 function trHandbook(){
   const pane = $('tab-training');
   const rows = [
+    ['meet',     'Meet the Team',       'Who is who: first names and jobs'],
     ['sos',      'Steps of Service',    '11 table touches, each with an owner'],
     ['sops',     'Our Way',             'The SOPs: why, when, and the steps'],
     ['style',    "The Server's Style",  'Make a friend, tour the menu, your scripts'],
@@ -2752,8 +2744,29 @@ function trHandbook(){
   }).join('');
   pane.innerHTML = `
     ${trBackBtn('The Road', 'path')}
-    <h2 class="font-display text-2xl text-text mb-3">The Back Pocket</h2>
+    <h2 class="font-display text-2xl text-text mb-3">Our Systems &amp; Tools</h2>
     <div class="bg-surface border border-line rounded-xl px-4 py-1">${rows}</div>`;
+}
+
+/* ---- Meet the Team: who is who, straight from the roster ------------------ */
+function trMeetTeam(){
+  const pane = $('tab-training');
+  const roster = (S.roster || []).slice()
+    .sort((a, b) => String(a.first_name || '').localeCompare(String(b.first_name || '')));
+  const rows = roster.map(p => {
+    const jobs = staffRoles(p).join(' · ');
+    return `<div class="flex items-center justify-between gap-3 py-2.5 border-t border-line/50 first:border-t-0">
+      <span class="text-sm text-text font-medium">${esc(p.first_name)}</span>
+      ${jobs ? `<span class="text-xs text-muted text-right">${esc(jobs)}</span>` : ''}
+    </div>`;
+  }).join('');
+  pane.innerHTML = `
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
+    <p class="text-xs uppercase tracking-wider text-golddim">Work As a Team</p>
+    <h2 class="font-display text-2xl text-text mt-0.5 mb-1">Meet the Team</h2>
+    <p class="text-muted text-sm mb-3">Who is who. Learn the names before the shift does it for you.</p>
+    ${rows ? `<div class="bg-surface border border-line rounded-xl px-4 py-1">${rows}</div>`
+           : `<p class="text-muted text-sm">The team list loads when you sign in with a connection.</p>`}`;
 }
 
 /* ---- SOP list + one SOP + order-the-steps practice ----------------------- */
@@ -2775,7 +2788,7 @@ function trSopList(){
         </button>`).join('')}
     </div>`).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <h2 class="font-display text-2xl text-text mb-1">Our Way</h2>
     <p class="text-muted text-sm">Every procedure keeps its why next to its steps. Read it, then practice the order.</p>
     ${groups}`;
@@ -2894,7 +2907,7 @@ function trSos(){
     </div>`).join('');
   const upkeep = manualPages('upkeep')[0];
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-1">Steps of Service</h2>
     <p class="text-muted text-sm mb-3">We count service in table touches. Every intentional interaction with a guest is a step, and every step has an owner.</p>
@@ -3033,7 +3046,7 @@ function trStyle(){
     </button>`;
   }).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-4">The Server's Style</h2>
     <p class="text-xs uppercase tracking-wider text-golddim mb-1.5">The First Minutes</p>
@@ -3066,7 +3079,7 @@ function trPos(){
     </div>`;
   }).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-1">The POS Basics</h2>
     <p class="text-muted text-sm mb-3">By the end of training, all of this is yours on the register.</p>
@@ -3082,7 +3095,7 @@ function trMinimums(){
       <span class="text-xs ${g.done ? 'text-pass font-medium' : 'text-muted'}">${g.done ? '✓ Done' : g.count + ' of ' + g.required}</span>
     </div>`).join('');
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-2">Server Minimums</h2>
     ${page ? fmtContent(page.body) : ''}
@@ -3096,7 +3109,7 @@ function trProblems(){
   const intro = rows.filter(r => r.order === 1)[0];
   const items = rows.filter(r => r.order > 1);
   pane.innerHTML = `
-    ${trBackBtn('The Back Pocket', 'handbook')}
+    ${trBackBtn('Our Systems & Tools', 'handbook')}
     <p class="text-xs uppercase tracking-wider text-golddim">Reference</p>
     <h2 class="font-display text-2xl text-text mt-0.5 mb-2">The Top Table Problems</h2>
     ${intro ? fmtContent(intro.body) : ''}

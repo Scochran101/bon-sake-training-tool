@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 26;           // shown on the login screen; bump with each release
+const APP_VERSION = 27;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -3889,7 +3889,8 @@ function startDishTest(itemId, level){
 
 /* ===========================================================================
    LEVEL 2 "DESCRIBE IT" (built from Rodney's taste lines)
-   A dish qualifies when its description carries a Flavor line that parses
+   Two questions: the words that describe the dish, then its allergens. A
+   dish qualifies when its description carries a Flavor line that parses
    into at least two clean tags. Drinks keep the ingredient-recall Level 2
    until they get taste descriptions: the moment those lines land in the
    sheet, the describe-it test switches on for them by itself.
@@ -3991,28 +3992,6 @@ function buildFlavorQuiz(it){
   const options = taste.tags.concat(decoys).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   return { type:'selectAll', flavorQuiz:true, item:it, options, correct:new Set(taste.tags) };
 }
-function buildHeatQuestion(it){
-  const taste = dishTaste(it);
-  if(!taste.heatAccepted.length) return null;
-  return { type:'heat', item:it, accepted:new Set(taste.heatAccepted), heatText:taste.heatText };
-}
-// The description with the dish's own name hidden, and four dishes to pin it
-// on. Decoys come from the same category first so the choice takes knowledge.
-function maskDishName(script, name){
-  const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  let out = String(script || '').replace(new RegExp('(?:the\\s+)?' + safe, 'ig'), 'this dish');
-  return out.charAt(0).toUpperCase() + out.slice(1);
-}
-function buildPitchMatch(it){
-  let pool = S.menu.filter(x => x.item_id !== it.item_id && x.section === it.section && dishTasteReady(x));
-  if(pool.length < 3) pool = S.menu.filter(x => x.item_id !== it.item_id && dishTasteReady(x));
-  if(pool.length < 3) return null;
-  const names = shuffle([it.item_name].concat(sample(pool, 3).map(x => x.item_name)));
-  return { type:'mcq', prompt: maskDishName(dishTaste(it).script, it.item_name),
-    sub:'Which dish is this describing?', options:names,
-    correctIndex:names.indexOf(it.item_name), item:it };
-}
-
 function beginTestAfterModal(){
   hide($('antiCheatModal'));
 
@@ -4032,10 +4011,9 @@ function beginTestAfterModal(){
     return;
   }
 
-  // Per-dish test, pass = 100%.
+  // Per-dish test, pass = 100%. Two questions at Level 2, always.
   // Level 1: select the right ingredients from a grid (recognition).
-  // Level 2, dishes with taste lines: describe it (flavor words, heat, which
-  //   dish the pitch belongs to) + that dish's allergens.
+  // Level 2, dishes with taste lines: the words that describe it + allergens.
   // Level 2, everything else (drinks until their taste descriptions land):
   //   name every ingredient from memory (recall) + allergens.
   if(pendingTest.dish){
@@ -4044,17 +4022,10 @@ function beginTestAfterModal(){
     if(level === 2){
       const aCorrect = new Set(ALLERGEN_OPTIONS.filter(a => it.allergens[a.key]).map(a => a.label));
       const allergenQ = { type:'allergen', item:it, options: ALLERGEN_OPTIONS.map(a=>a.label), correct: aCorrect };
-      if(dishTasteReady(it)){
-        questions = [buildFlavorQuiz(it)];
-        const hq = buildHeatQuestion(it);  if(hq) questions.push(hq);
-        const pm = buildPitchMatch(it);    if(pm) questions.push(pm);
-        questions.push(allergenQ);
-      } else {
-        questions = [
-          { type:'recall', item:it, correct: it.ingredients.slice() },
-          allergenQ
-        ];
-      }
+      questions = [
+        dishTasteReady(it) ? buildFlavorQuiz(it) : { type:'recall', item:it, correct: it.ingredients.slice() },
+        allergenQ
+      ];
     } else {
       const sq = buildSelectAll(it);
       questions = [{ type:'selectAll', item:it, options:sq.options, correct:sq.correct }];
@@ -4184,7 +4155,6 @@ function renderQuestion(){
   else if(q.type === 'recall')                        bodyHtml = renderRecall(q);
   else if(q.type === 'tableplace')                    bodyHtml = renderTablePlace(q);
   else if(q.type === 'mcq')                           bodyHtml = renderMCQ(q);
-  else if(q.type === 'heat')                          bodyHtml = renderHeat(q);
 
   $('tab-test').innerHTML = `<div class="max-w-2xl mx-auto">${header}<div id="qBody" class="fade-in">${bodyHtml}</div></div>`;
   if(q.type === 'wordbank') wbAfterRender(q);
@@ -4451,50 +4421,14 @@ function answerMCQ(i){
   readyNext('mcqNext');
 }
 
-/* ---- Heat check (Level 2 describe-it) ------------------------------------ */
-// One tap on the None / Mild / Medium / Hot scale. Rodney's ranges ("Mild to
-// medium") accept either end, so a fair read of the card always passes.
-function renderHeat(q){
-  const it = q.item;
-  const opts = HEAT_LEVELS.map((h,i) =>
-    `<button data-opt="${i}" onclick="answerHeat(${i})" class="mcqOpt bg-chip border border-line rounded-lg px-4 py-3 text-sm font-semibold text-text text-center transition-colors">${h}</button>`
-  ).join('');
-  return `
-    <p class="text-xs uppercase tracking-wider text-golddim">${esc(it.section)}</p>
-    <h3 class="font-display text-2xl text-text mt-1 mb-3">${esc(it.item_name)}</h3>
-    <p class="text-sm text-muted mb-3">How much heat does it bring? Tap what you'd tell a guest to expect.</p>
-    <div id="htGrid" class="grid grid-cols-2 gap-2">${opts}</div>
-    <div id="htResult" class="mt-4"></div>
-    <button id="htNext" onclick="nextQuestion()" class="hidden mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next Question →</button>`;
-}
-function answerHeat(i){
-  const t = S.test; if(t.answered) return; t.answered = true;
-  const q = t.questions[t.idx];
-  const right = q.accepted.has(HEAT_LEVELS[i]);
-  document.querySelectorAll('#htGrid .mcqOpt').forEach((btn,bi) => {
-    const lvl = HEAT_LEVELS[bi];
-    btn.classList.remove('bg-chip'); btn.classList.add('pointer-events-none');
-    if(q.accepted.has(lvl)){ btn.style.borderColor='#27AE60'; btn.style.background='rgba(39,174,96,0.15)'; btn.textContent = '✓ ' + lvl; }
-    else if(bi === i){ btn.style.borderColor='#C0392B'; btn.style.background='rgba(192,57,43,0.15)'; btn.textContent = '✗ ' + lvl; }
-  });
-  $('htResult').innerHTML = (right
-    ? `<p class="text-pass font-semibold">Correct.</p>`
-    : `<p class="text-fail font-semibold">Not quite.</p>`)
-    + `<p class="text-sm text-muted mt-1">The card says: Heat · ${esc(q.heatText)}</p>`;
-  recordOutcome(right, q.item);
-  readyNext('htNext');
-}
-
 /* ---- Shared grading + reveal (for select-all / word bank) ---------------- */
 function gradeAndReveal(allRight, item, resultElId){
   recordOutcome(allRight, item);
   const q = S.test.questions[S.test.idx];
   const elId = resultElId || (q.type==='wordbank' ? 'wbResult' : 'saResult');
   const el = $(elId);
-  // The flavor question IS the description, so revealing the sell text there
-  // would hand the next questions their answers.
   let sell = '';
-  if(item && item.sell_description && !q.flavorQuiz){
+  if(item && item.sell_description){
     const parts = descParts(item.sell_description);
     sell = `<div class="border-l-2 border-gold pl-3 mt-3"><p class="text-xs uppercase tracking-wider text-golddim mb-1">Here's how to sell it</p>
       ${parts.body.map(l => `<p class="font-display italic text-text text-sm leading-relaxed mb-1">${esc(l)}</p>`).join('')}
@@ -4649,6 +4583,11 @@ async function finishTest(){
     }
   }
 
+  // A passed Level 1 flows straight into Level 2 instead of dead-ending at
+  // the score (Steven's request). Same start flow, anti-cheat modal and all.
+  const nextLevelBtn = (t.track.type==='dish' && t.level===1 && passed)
+    ? `<button onclick="startDishTest('${t.itemId}',2)" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Take Level 2 Now →</button>` : '';
+
   // After mastering a dish, ask whether they've actually tasted it. "Not yet"
   // flags it for the chef's pre-shift tasting list on the manager's Team view.
   const askTried = (t.track.type==='dish' && t.level===2 && passed && (S.dishNotes[t.itemId]||{}).tried !== 'yes');
@@ -4674,7 +4613,8 @@ async function finishTest(){
       ${milestone}
       ${triedAsk}
       ${missedHtml}
-      <button onclick="returnToMenu()" class="mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg">View My Progress →</button>
+      ${nextLevelBtn}
+      <button onclick="returnToMenu()" class="${nextLevelBtn?'mt-2 w-full border border-line text-muted py-2.5 rounded-lg text-sm':'mt-7 w-full bg-gold text-bg font-semibold py-3 rounded-lg'}">View My Progress →</button>
     </div>`;
   S.test = null;
 }

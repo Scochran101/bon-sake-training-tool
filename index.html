@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 25;           // shown on the login screen; bump with each release
+const APP_VERSION = 26;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -1514,13 +1514,9 @@ function renderItemDetail(id){
   if(it.sell_description){
     const isDrink = DRINK_SECTIONS.indexOf(it.section) !== -1 || !!wineTypeOf(it.section);
     const sellLabel = it.section === 'Bar Prep' ? 'The Build' : (isDrink ? 'The House Pitch' : 'Description');
-    const sellLines = String(it.sell_description).split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-    let sellBody = '', sellMeta = '';
-    sellLines.forEach(l => {
-      const m = l.match(/^(Flavor|Texture|Heat)\s*:\s*(.*)$/i);
-      if(m) sellMeta += `<p class="text-xs text-muted mt-1"><span class="text-golddim uppercase tracking-wider">${esc(m[1])}</span> · ${esc(m[2])}</p>`;
-      else sellBody += `<p class="font-display italic text-text leading-relaxed mb-1.5">${esc(l)}</p>`;
-    });
+    const parts = descParts(it.sell_description);
+    const sellBody = parts.body.map(l => `<p class="font-display italic text-text leading-relaxed mb-1.5">${esc(l)}</p>`).join('');
+    const sellMeta = parts.meta.map(m => `<p class="text-xs text-muted mt-1"><span class="text-golddim uppercase tracking-wider">${esc(m.k)}</span> · ${esc(m.v)}</p>`).join('');
     sellHtml = `<div class="border-l-2 border-gold pl-4 py-1">
          <p class="text-xs uppercase tracking-wider text-golddim mb-1">${sellLabel}</p>
          ${sellBody}${sellMeta ? `<div class="mt-2">${sellMeta}</div>` : ''}
@@ -3814,10 +3810,15 @@ function renderTestHome(){
   const m = categoryMastery(activeCat);
   const dishes = testableDishes(activeCat).sort((a,b)=>a.item_name.toLowerCase().localeCompare(b.item_name.toLowerCase()));
   const dishRows = dishes.map(dishTestRow).join('') || '<p class="text-muted text-sm">No dishes to test in this category.</p>';
+  // Dishes with taste lines get the describe-it Level 2; the rest (drinks,
+  // until their taste descriptions land) still recall ingredients from memory.
+  const l2Hint = dishes.some(dishTasteReady)
+    ? 'Level 1: know what is in it. Level 2: describe it the way you would to a guest.'
+    : 'Level 1: pick out what is in it. Level 2: name it all from memory.';
   pane.innerHTML = `
     <button onclick="selectTestCat(-1)" class="text-gold text-sm mb-3">&larr; Categories</button>
     <h2 class="font-display text-2xl text-text mb-1">${esc(activeCat)}</h2>
-    <p class="text-muted text-sm mb-3">${m.mastered} of ${m.total} mastered. Pass both levels on a dish to own it.</p>
+    <p class="text-muted text-sm mb-3">${m.mastered} of ${m.total} mastered. ${l2Hint}</p>
     <div class="space-y-2">${dishRows}</div>`;
 }
 
@@ -3886,6 +3887,132 @@ function startDishTest(itemId, level){
   show($('antiCheatModal'));
 }
 
+/* ===========================================================================
+   LEVEL 2 "DESCRIBE IT" (built from Rodney's taste lines)
+   A dish qualifies when its description carries a Flavor line that parses
+   into at least two clean tags. Drinks keep the ingredient-recall Level 2
+   until they get taste descriptions: the moment those lines land in the
+   sheet, the describe-it test switches on for them by itself.
+=========================================================================== */
+// Splits a description into its script lines and its Flavor / Texture / Heat
+// attribute lines, so every screen renders them the same way.
+function descParts(text){
+  const body = [], meta = [];
+  String(text || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean).forEach(l => {
+    const m = l.match(/^(Flavor|Texture|Heat)\s*:\s*(.*)$/i);
+    if(m) meta.push({ k: m[1], v: m[2] }); else body.push(l);
+  });
+  return { body, meta };
+}
+const HEAT_LEVELS = ['None','Mild','Medium','Hot'];
+// Qualifier words dropped when comparing flavor tags, so "slightly spicy"
+// and "spicy" read as the same claim.
+const TASTE_QUALIFIERS = ['slightly','lightly','mildly','very','naturally','deeply','usually','pretty','really','definitely','extremely','a','little','and','or','with','of','to','the','that','on','in','forward'];
+// Words that make the same claim about a dish. A decoy is only fair when it
+// shares NO family with anything the dish's own Flavor and Texture lines say,
+// so every wrong option is clearly wrong, not arguably right.
+const TASTE_FAMILIES = [
+  ['spicy','spice','hot','heat','peppery','pepper','wasabi','habanero','sriracha','chili','kick','bold','seasoned'],
+  ['rich','richer','indulgent','decadent','buttery','butter','creamy','cream','cheesy','heavy','substantial','layered'],
+  ['citrusy','citrus','bright','brighter','fresh','tangy','acidic','acidity','zesty','lime','lemon','yuzu','refreshing'],
+  ['sweet','sweeter','sweetness','honey','fruity','fruit','tropical','mango','coconut'],
+  ['savory','umami','earthy','salty','smoky','oceanic','ocean','soy','meaty','beefy','beef','crab','seafood','fish'],
+  ['mild','clean','light','lighter','delicate','simple','subtle','straightforward','approachable'],
+  ['nutty','sesame','pistachio','peanut'],
+  ['garlicky','garlic'],
+  ['herbal','herbs','aromatic','basil','cilantro','rosemary','vegetable'],
+  ['truffle'],
+  ['crispy','crunchy','crisp','crunch','tender','chewy','juicy','brothy']
+];
+function tasteWords(tag){
+  return String(tag || '').toLowerCase().replace(/[^a-z]+/g, ' ').split(' ')
+    .filter(w => w && TASTE_QUALIFIERS.indexOf(w) === -1);
+}
+function tasteFamilyOf(word){
+  for(let i = 0; i < TASTE_FAMILIES.length; i++){
+    if(TASTE_FAMILIES[i].indexOf(word) !== -1) return i;
+  }
+  return -1;
+}
+// Everything the taste lines say about one dish, parsed once per call.
+function dishTaste(it){
+  const parts = descParts((it && it.sell_description) || '');
+  const line = k => { const m = parts.meta.filter(x => x.k.toLowerCase() === k)[0]; return m ? m.v : ''; };
+  const tags = line('flavor').split(/[,;]/).map(s => s.trim())
+    .filter(s => s && s.length <= 28 && !/depend|choice/i.test(s));
+  const heatText = line('heat');
+  const heatLow = heatText.toLowerCase();
+  const heatAccepted = (!heatText || /depend|choice/.test(heatLow)) ? []
+    : HEAT_LEVELS.filter(h => heatLow.indexOf(h.toLowerCase()) !== -1);
+  return { script: parts.body.join('\n'), tags, texture: line('texture'), heatText, heatAccepted };
+}
+function dishTasteReady(it){ return dishTaste(it).tags.length >= 2; }
+// Every clean flavor tag on the menu, deduped: the decoy pool.
+function flavorVocab(){
+  const seen = new Set(), out = [];
+  S.menu.forEach(it => {
+    if(!dishTasteReady(it)) return;
+    dishTaste(it).tags.forEach(tag => {
+      const key = tasteWords(tag).join(' ');
+      if(key && !seen.has(key)){ seen.add(key); out.push(tag); }
+    });
+  });
+  return out;
+}
+// "Select ALL the words that describe the [dish]": its real tags plus decoys
+// that clash with nothing the dish's own lines claim. Heat words are only
+// decoys on no-heat dishes; "mild"-family words only on medium-plus dishes.
+function buildFlavorQuiz(it){
+  const taste = dishTaste(it);
+  const claim = new Set();
+  taste.tags.concat([taste.texture]).forEach(t => {
+    tasteWords(t).forEach(w => {
+      claim.add(w);
+      const f = tasteFamilyOf(w);
+      if(f !== -1) claim.add('fam:' + f);
+    });
+  });
+  const maxHeat = taste.heatAccepted.length
+    ? Math.max.apply(null, taste.heatAccepted.map(h => HEAT_LEVELS.indexOf(h))) : -1;
+  const heatFam = tasteFamilyOf('spicy'), mildFam = tasteFamilyOf('mild');
+  const pool = flavorVocab().filter(tag => {
+    const words = tasteWords(tag);
+    if(!words.length) return false;
+    for(let i = 0; i < words.length; i++){
+      const w = words[i], f = tasteFamilyOf(w);
+      if(claim.has(w)) return false;
+      if(f !== -1 && claim.has('fam:' + f)) return false;
+      if(f === heatFam && maxHeat !== 0) return false;   // heat decoys only when the dish truly has none
+      if(f === mildFam && maxHeat < 2) return false;     // "mild" decoys only when the dish clearly is not
+    }
+    return true;
+  });
+  const decoys = sample(pool, Math.min(4, pool.length));
+  const options = taste.tags.concat(decoys).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  return { type:'selectAll', flavorQuiz:true, item:it, options, correct:new Set(taste.tags) };
+}
+function buildHeatQuestion(it){
+  const taste = dishTaste(it);
+  if(!taste.heatAccepted.length) return null;
+  return { type:'heat', item:it, accepted:new Set(taste.heatAccepted), heatText:taste.heatText };
+}
+// The description with the dish's own name hidden, and four dishes to pin it
+// on. Decoys come from the same category first so the choice takes knowledge.
+function maskDishName(script, name){
+  const safe = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let out = String(script || '').replace(new RegExp('(?:the\\s+)?' + safe, 'ig'), 'this dish');
+  return out.charAt(0).toUpperCase() + out.slice(1);
+}
+function buildPitchMatch(it){
+  let pool = S.menu.filter(x => x.item_id !== it.item_id && x.section === it.section && dishTasteReady(x));
+  if(pool.length < 3) pool = S.menu.filter(x => x.item_id !== it.item_id && dishTasteReady(x));
+  if(pool.length < 3) return null;
+  const names = shuffle([it.item_name].concat(sample(pool, 3).map(x => x.item_name)));
+  return { type:'mcq', prompt: maskDishName(dishTaste(it).script, it.item_name),
+    sub:'Which dish is this describing?', options:names,
+    correctIndex:names.indexOf(it.item_name), item:it };
+}
+
 function beginTestAfterModal(){
   hide($('antiCheatModal'));
 
@@ -3907,16 +4034,27 @@ function beginTestAfterModal(){
 
   // Per-dish test, pass = 100%.
   // Level 1: select the right ingredients from a grid (recognition).
-  // Level 2: name every ingredient from memory (recall) + that dish's allergens.
+  // Level 2, dishes with taste lines: describe it (flavor words, heat, which
+  //   dish the pitch belongs to) + that dish's allergens.
+  // Level 2, everything else (drinks until their taste descriptions land):
+  //   name every ingredient from memory (recall) + allergens.
   if(pendingTest.dish){
     const it = pendingTest.dish, level = pendingTest.level;
     let questions;
     if(level === 2){
       const aCorrect = new Set(ALLERGEN_OPTIONS.filter(a => it.allergens[a.key]).map(a => a.label));
-      questions = [
-        { type:'recall',   item:it, correct: it.ingredients.slice() },
-        { type:'allergen', item:it, options: ALLERGEN_OPTIONS.map(a=>a.label), correct: aCorrect }
-      ];
+      const allergenQ = { type:'allergen', item:it, options: ALLERGEN_OPTIONS.map(a=>a.label), correct: aCorrect };
+      if(dishTasteReady(it)){
+        questions = [buildFlavorQuiz(it)];
+        const hq = buildHeatQuestion(it);  if(hq) questions.push(hq);
+        const pm = buildPitchMatch(it);    if(pm) questions.push(pm);
+        questions.push(allergenQ);
+      } else {
+        questions = [
+          { type:'recall', item:it, correct: it.ingredients.slice() },
+          allergenQ
+        ];
+      }
     } else {
       const sq = buildSelectAll(it);
       questions = [{ type:'selectAll', item:it, options:sq.options, correct:sq.correct }];
@@ -4046,6 +4184,7 @@ function renderQuestion(){
   else if(q.type === 'recall')                        bodyHtml = renderRecall(q);
   else if(q.type === 'tableplace')                    bodyHtml = renderTablePlace(q);
   else if(q.type === 'mcq')                           bodyHtml = renderMCQ(q);
+  else if(q.type === 'heat')                          bodyHtml = renderHeat(q);
 
   $('tab-test').innerHTML = `<div class="max-w-2xl mx-auto">${header}<div id="qBody" class="fade-in">${bodyHtml}</div></div>`;
   if(q.type === 'wordbank') wbAfterRender(q);
@@ -4061,7 +4200,9 @@ function renderSelectAll(q){
     ? `Select ALL allergens present in the <span class="text-text">${esc(it.item_name)}</span>. If it has none, submit with nothing selected.`
     : (q.beerQuiz
         ? `Select every beer and seltzer <span class="text-text">Bon Sake serves</span>. Leave the ones we don't carry alone.`
-        : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>.`);
+        : (q.flavorQuiz
+            ? `Select ALL the words that describe the <span class="text-text">${esc(it.item_name)}</span>. How it tastes, not what's in it.`
+            : `Select ALL ingredients that belong in the <span class="text-text">${esc(it.item_name)}</span>.`));
   const cols = isAllergen ? 'grid-cols-2' : 'grid-cols-2';
   const opts = q.options.map((o,i) =>
     `<button data-opt="${i}" onclick="saToggle(this)" class="saOpt text-left bg-chip border border-line rounded-lg px-3 py-2.5 text-sm text-text transition-colors">${esc(o)}</button>`
@@ -4310,14 +4451,55 @@ function answerMCQ(i){
   readyNext('mcqNext');
 }
 
+/* ---- Heat check (Level 2 describe-it) ------------------------------------ */
+// One tap on the None / Mild / Medium / Hot scale. Rodney's ranges ("Mild to
+// medium") accept either end, so a fair read of the card always passes.
+function renderHeat(q){
+  const it = q.item;
+  const opts = HEAT_LEVELS.map((h,i) =>
+    `<button data-opt="${i}" onclick="answerHeat(${i})" class="mcqOpt bg-chip border border-line rounded-lg px-4 py-3 text-sm font-semibold text-text text-center transition-colors">${h}</button>`
+  ).join('');
+  return `
+    <p class="text-xs uppercase tracking-wider text-golddim">${esc(it.section)}</p>
+    <h3 class="font-display text-2xl text-text mt-1 mb-3">${esc(it.item_name)}</h3>
+    <p class="text-sm text-muted mb-3">How much heat does it bring? Tap what you'd tell a guest to expect.</p>
+    <div id="htGrid" class="grid grid-cols-2 gap-2">${opts}</div>
+    <div id="htResult" class="mt-4"></div>
+    <button id="htNext" onclick="nextQuestion()" class="hidden mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next Question →</button>`;
+}
+function answerHeat(i){
+  const t = S.test; if(t.answered) return; t.answered = true;
+  const q = t.questions[t.idx];
+  const right = q.accepted.has(HEAT_LEVELS[i]);
+  document.querySelectorAll('#htGrid .mcqOpt').forEach((btn,bi) => {
+    const lvl = HEAT_LEVELS[bi];
+    btn.classList.remove('bg-chip'); btn.classList.add('pointer-events-none');
+    if(q.accepted.has(lvl)){ btn.style.borderColor='#27AE60'; btn.style.background='rgba(39,174,96,0.15)'; btn.textContent = '✓ ' + lvl; }
+    else if(bi === i){ btn.style.borderColor='#C0392B'; btn.style.background='rgba(192,57,43,0.15)'; btn.textContent = '✗ ' + lvl; }
+  });
+  $('htResult').innerHTML = (right
+    ? `<p class="text-pass font-semibold">Correct.</p>`
+    : `<p class="text-fail font-semibold">Not quite.</p>`)
+    + `<p class="text-sm text-muted mt-1">The card says: Heat · ${esc(q.heatText)}</p>`;
+  recordOutcome(right, q.item);
+  readyNext('htNext');
+}
+
 /* ---- Shared grading + reveal (for select-all / word bank) ---------------- */
 function gradeAndReveal(allRight, item, resultElId){
   recordOutcome(allRight, item);
-  const elId = resultElId || (S.test.questions[S.test.idx].type==='wordbank' ? 'wbResult' : 'saResult');
+  const q = S.test.questions[S.test.idx];
+  const elId = resultElId || (q.type==='wordbank' ? 'wbResult' : 'saResult');
   const el = $(elId);
-  const sell = item && item.sell_description
-    ? `<div class="border-l-2 border-gold pl-3 mt-3"><p class="text-xs uppercase tracking-wider text-golddim mb-1">Here's how to sell it</p><p class="font-display italic text-text text-sm leading-relaxed">${esc(item.sell_description)}</p></div>`
-    : '';
+  // The flavor question IS the description, so revealing the sell text there
+  // would hand the next questions their answers.
+  let sell = '';
+  if(item && item.sell_description && !q.flavorQuiz){
+    const parts = descParts(item.sell_description);
+    sell = `<div class="border-l-2 border-gold pl-3 mt-3"><p class="text-xs uppercase tracking-wider text-golddim mb-1">Here's how to sell it</p>
+      ${parts.body.map(l => `<p class="font-display italic text-text text-sm leading-relaxed mb-1">${esc(l)}</p>`).join('')}
+      ${parts.meta.map(m => `<p class="text-xs text-muted mt-0.5"><span class="text-golddim uppercase tracking-wider">${esc(m.k)}</span> · ${esc(m.v)}</p>`).join('')}</div>`;
+  }
   const head = allRight ? `<p class="text-pass font-semibold">Correct!</p>` : `<p class="text-fail font-semibold">Not quite. Review the highlights.</p>`;
   el.innerHTML = (el.innerHTML || '') + head + sell;
 }

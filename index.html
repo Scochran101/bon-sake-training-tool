@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 27;           // shown on the login screen; bump with each release
+const APP_VERSION = 28;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -1745,12 +1745,13 @@ function dutyTasksFor(list){
     .map(r => r.task);
 }
 // Which job a checklist belongs to. Lists that don't name a job are for servers.
-const DUTY_JOBS = ['Busser','Runner','Server','Bartender'];
+const DUTY_JOBS = ['Busser','Runner','Server','Bartender','Host'];
 function dutyJobFor(list){
   const l = String(list).toLowerCase();
   if(l.indexOf('busser') !== -1) return 'Busser';
   if(l.indexOf('runner') !== -1) return 'Runner';
   if(l.indexOf('bartender') !== -1) return 'Bartender';
+  if(l.indexOf('host') !== -1) return 'Host';
   return 'Server';
 }
 // Words with their first letter capitalized, per the house style for duties.
@@ -4859,7 +4860,7 @@ async function renderTeam(){
   }
 }
 
-const TEAM_JOBS = ['Busser','Runner','Server','Bartender'];
+const TEAM_JOBS = ['Busser','Runner','Server','Bartender','Host'];
 function staffRoles(s){ return String(s.role||'').split(/[,|/]/).map(x => x.trim()).filter(Boolean); }
 
 function drawTeam(d){

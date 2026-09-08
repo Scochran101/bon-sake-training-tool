@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 29;           // shown on the login screen; bump with each release
+const APP_VERSION = 30;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -2217,18 +2217,24 @@ const MANUAL_BUILTIN = {
       when:"Whenever the window holds ready food, whoever's table it is.",
       steps:['Read the ticket before lifting the tray: the table number, then seat one.','Confirm the table by number on the way.','Serve seat one and clockwise from it. Each plate goes in front of the guest who ordered it; no one is asked whose food it is.',"Serve with open-hand service: to each guest's open side, with the hand furthest from them.",'Carry glasses low and handle them at the bottom; stemware is never touched at the bulb.','Return with full hands.'] }
   ],
+  // The eight steps from "The Guest Experience" (Host to Host), 2026-09-08.
   sos: [
-    { step:1,  title:'The Welcome',             detail:'Greeted at the door; Name the server.', owner:'Host' },
-    { step:2,  title:'The Seating',             detail:'A pulled chair; excess place settings removed; the server named again.', owner:'Host' },
-    { step:3,  title:'The First Minute',        detail:'Greeting, water, and gratitude.', owner:'Busser · Runner' },
-    { step:4,  title:'The Server Introduction', detail:'Your name first; Ask about their last visit; Drink suggestions and orders taken; Mention a menu tour.', owner:'Server' },
-    { step:5,  title:'The Menu Tour',           detail:'Drinks brought; the appetizer tour, taste over ingredients; sell what you love.', owner:'Server' },
-    { step:6,  title:'The Apps Arrive',         detail:'No auction; Check drinks.', owner:'Runner · Server' },
-    { step:7,  title:'App Quality Check',       detail:'Two bites; Ask with high expectations; Entree suggestions.', owner:'Server' },
-    { step:8,  title:'The Entree Arrives',      detail:'No auction; checked the same way.', owner:'Runner · Server' },
-    { step:9,  title:'Entree Quality Check',    detail:'Two bites or one roll; Mention dessert.', owner:'Server' },
-    { step:10, title:'Dessert Offer',           detail:'Offer to-go if appropriate; dessert cocktails.', owner:'Server' },
-    { step:11, title:'The Check & Send-Off',    detail:'Service continues even after the check is paid; no rush.', owner:'Server → Host' }
+    { step:1, title:'The Welcome', detail:'The server is introduced at the podium; a special is mentioned on the walk.', owner:'Host',
+      always:['Greet every guest when they arrive.',"If there's a wait, offer the bar and a place to sit. Name the bartender.",'If being seated, introduce the server and invite them to follow.','Plant a seed on the walk: a Dish, a Drink, a Special.'] },
+    { step:2, title:'The Seating', detail:'A pulled chair, settings cleared; the server named again.', owner:'Host',
+      always:['Pull out the chair for at least one guest; get a booster if needed.','Clear the extra place settings from the table.','Name the server one more time on your way out.'] },
+    { step:3, title:'The First Minute', detail:'Greeting, Water, Gratitude.', owner:'Busser · Runner',
+      always:['Water the glasses within one minute of seating.','Greet the table; thank them for dining with us.','Use open-hand service.'] },
+    { step:4, title:'The Server Introduction/Menu Tour', detail:'Find first timers; tour the menu.', owner:'Server',
+      always:['Introduce yourself so that you are heard; your name matters.','Ask about their last visit; new guests are pointed out to the manager.',"Ask which kind of drink they'd like.",'Tour guide the appetizers to consolidate the order.'] },
+    { step:5, title:'Quality Checks', detail:'Two bites or one roll; lead with suggestions.', owner:'Server',
+      always:['Check at two bites, or one roll of each course.','Set a high expectation.','Ask about the dish by name for 1-2 guests. For big parties, ask about at least one dish by name.'] },
+    { step:6, title:'The Entree Arrives', detail:'Landed together; mention dessert early.', owner:'Runner · Server',
+      always:['Land the table entrees together.','Ask about more drinks, assuming the answer is yes.','Remove any dirty plates while departing.','Read the table for an opportunity to mention dessert before the entrees are done.'] },
+    { step:7, title:'Dessert Offer', detail:'Food or beverage.', owner:'Server',
+      always:['Name at least one dessert that you love. After dinner cocktails count too.','Read the table to decide if it should be offered boxed up to-go.'] },
+    { step:8, title:'The Check & Send-Off', detail:'No rush; specific reason to return.', owner:'Server → Host',
+      always:['Let the guests relax at the end of the meal.','Continue service even after the bill is paid.','Give a specific reason to return.','Thank any guest that we see leaving.'] }
   ],
   pages: [
     { section:'principle', order:1, title:'Work As a Team', body:"The entire team works together for the guests and each other. From attitude to side work to table upkeep, everybody contributes so that we can all have a better night. We are always on stage for the people dining; who doesn't enjoy watching excellent teamwork?", note:'' },
@@ -2256,7 +2262,7 @@ const MANUAL_BUILTIN = {
     { section:'script', order:2, title:'Touring the Menu', body:'"Before anybody decides, I have got to tell you about the [DISH]."', note:'Point at it. Guests remember what you point to.' },
     { section:'script', order:3, title:'The Quality Check', body:'"Is that [DISH] amazing or what?"', note:'Never ask if everything is okay. We aim much higher than okay.' },
     { section:'script', order:4, title:'Dessert', body:'"Did I mention the [DESSERT]?"', note:'Name one. A general offer of dessert invites a general no.' },
-    { section:'upkeep', order:1, title:'Always On: Table Upkeep', body:'Anything the guests need. Refill water & soda without asking. Menu drinks are offered assuming the sale. Plates are picked up quickly. Anyone passing a table that needs something handles it; either themselves or with team help.', note:'' },
+    { section:'upkeep', order:1, title:'Always On: Table Upkeep', body:"- Refill sodas and water without asking, except for kids.\n- Assume the sale of cocktails and wine.\n- Pre-bus into the aisle; avoid stacking on the table.\n- Help clear tables not in our section; guests don't care about sections.\nEveryone owns it. Bussers and runners lead it.", note:'' },
     { section:'pos', order:1, title:'Start of Shift', body:'Clock in and out|Open a check|Find any item by tab or search', note:'' },
     { section:'pos', order:2, title:'The Order', body:'Ring with seat numbers: seat one noted, clockwise, zero for a seat that did not order|Modify: requests, substitutions, allergies, coursing|Change an order after it has been sent|Fire a course; message the kitchen or sushi bar', note:'' },
     { section:'pos', order:3, title:'Payment', body:'Split evenly, by seat, and across payment types|Take cash, card, mobile, gift card|Print itemized bills and receipts', note:'' },
@@ -2271,7 +2277,7 @@ const MANUAL_BUILTIN = {
     { section:'checks', order:1, title:'The Busser Check', body:'Set a table to standard, unassisted.|Strip, wipe, and reset a just-left table at service pace.|Display open-hand service while clearing an occupied table.|Serve and refill water correctly: speed, hand, glass placement, attitude.|Walk the opening list and the closing list, naming where each thing happens.|Explain, in your own words, what it means here to work as a team.', note:'Run by a manager or shift lead on the floor, on or after shift three.' },
     { section:'checks', order:2, title:'The Table Test and the Runner Check', body:'The Table Test: a blank floor plan completed from memory. Every table number, every room.|Deliver a full order correctly to a four-top or bigger.|Serve each glass correctly.|Explain the two kitchens and how to ring food so it lands together.|Read and clear the window correctly during a push.|Walk the runner opening and closing lists.', note:'Correctly carries the standard: seat one read from the ticket, service clockwise from seat one, open-hand service throughout, no auctioning, glasses from the bottom and never at the bulb of a stem.' },
     { section:'checks', order:3, title:'The Menu Test', body:'Three appetizers: ingredients and taste.|Three entrees: ingredients and taste.|One dessert: ingredients and taste.|Two cocktails: ingredients, and who you might sell each to.|Five wines: one of each popular style, for when a guest asks.', note:'Passing the Menu Test earns tables. It covers your minimums.' },
-    { section:'checks', order:4, title:'The Server Skill Out', body:'Appearance: grooming, clean uniform, tools in hand, posture and readiness.|First Impression: name given where it can be heard, with the pause. Opens with a recommendation, not an order pad. Anticipates.|Steps of Service: all nine, in order, on time.|Salesmanship: tours instead of taking orders. Describes with ingredients and taste. Assumes the sale.|Systems: POS proficiency with seat numbers. How to handle the Top Table Problems.|Teamwork: helps tables that are not theirs. Full hands both ways. Takes feedback and applies it. Composed in chaos.|The Principles: states all three in their own words and connects them to what they did tonight.', note:'Scored by a manager across seven categories, each line 1 for below standard, 2 for standard, 3 for above. Ninety percent or above passes. Below ninety means an action plan and more shifts.' },
+    { section:'checks', order:4, title:'The Server Skill Out', body:'Appearance: grooming, clean uniform, tools in hand, posture and readiness.|First Impression: name given where it can be heard, with the pause. Opens with a recommendation, not an order pad. Anticipates.|Steps of Service: all eight, in order, on time.|Salesmanship: tours instead of taking orders. Describes with ingredients and taste. Assumes the sale.|Systems: POS proficiency with seat numbers. How to handle the Top Table Problems.|Teamwork: helps tables that are not theirs. Full hands both ways. Takes feedback and applies it. Composed in chaos.|The Principles: states all three in their own words and connects them to what they did tonight.', note:'Scored by a manager across seven categories, each line 1 for below standard, 2 for standard, 3 for above. Ninety percent or above passes. Below ninety means an action plan and more shifts.' },
     { section:'trainer', order:1, title:'Training Focus', body:"The first hour sets the tone. Each shift carries the exact list of what must be taught and shown in it.|Model the behavior. While the trainee works in your section, they are learning the steps of service by watching you. Run your tables the way you want theirs run.|Head on a swivel. Teach them about scanning the room: watch whole sections, guests, teammates, food windows, then back to the guests. Always looking for the next thing. What teamwork looks like in practice.|Fast feedback, delivered well. Correct in the moment. You must give a lot of it, so give it well: be encouraging and point out what they are doing right alongside what needs to change.|Show Me. Read the shift's Show Me list before the shift starts and teach toward it. Sign only what you watched them do correctly. Thoroughness here is favoritism to the team and the guests: nobody goes on the floor who will interrupt the teamwork or the experience.|Anything unfinished moves forward. Anything not covered moves to the next shift.", note:'' },
     { section:'trainer', order:2, title:'Orientation Meeting', body:'What we do and expect here. The experience we sell and the standard we hold.|Three principles. Teamwork, Systems, Experience.|The training schedule. Bussing, running, then serving; checks between; tests.|How feedback works here. It comes quickly and often; it is the fastest way to get good.|The basics. Uniform, schedule, clock-in, who to ask.', note:'Before the first shift.' }
   ],
@@ -2302,11 +2308,11 @@ const MANUAL_BUILTIN = {
     { shift:6, title:'The Runner Check',
       plan:['Revisit and review shifts four and five.','The Steps of Service.','The Top Table Problems and exactly what the manager does about each. Not every situation is identical, and the manager may call an audible for a reason. We still plan for eighty percent of things.','Menu work: what you have tasted, what you are drawn to, what you might sell.'],
       floor:"Tonight the POS outranks the bus tub: more than bussing, the trainee needs to be ringing in food. They run the window to every table as the trainer judges them ready, and they work as the trainer's assistant across the section. Tasting and learning the menu descriptions continues off the floor.",
-      showMe:['Walks the nine steps in order','Rings in orders with seat numbers, repeatedly, with minimal guidance','Describes three dishes with ingredients and taste, in their own words','Names the dishes they intend to sell'] },
+      showMe:['Walks the eight steps in order','Rings in orders with seat numbers, repeatedly, with minimal guidance','Describes three dishes with ingredients and taste, in their own words','Names the dishes they intend to sell'] },
     { shift:7, title:'First Section, with backup',
       plan:['Revisit and review, including the Top Table Problems.','Review the Steps of Service.','The host stand. Part of this hour is spent with the host, who explains the one-for-one, the sections, and how reservations work. The host sets up everything a server does.','Ringing in: seat one noted, order entered clockwise, a zero for any seat that did not order.','Writing it down and repeating it back.'],
-      floor:"A small section near the trainer's; two-tops mostly, more if they are ready. The trainee runs all nine steps on their own tables and rings in all their own food. When they are free and the trainer is headed to the POS, they ring those too, with the trainer beside them confirming. The trainer is there to support. Focus on teamwork.",
-      showMe:['Runs all nine steps on a live table','Rings in every order with seat numbers, unprompted','Checks the apps at two bites or one roll and takes the entree order on it',"Explains the host's one-for-one and how it feeds their section"] },
+      floor:"A small section near the trainer's; two-tops mostly, more if they are ready. The trainee runs all eight steps on their own tables and rings in all their own food. When they are free and the trainer is headed to the POS, they ring those too, with the trainer beside them confirming. The trainer is there to support. Focus on teamwork.",
+      showMe:['Runs all eight steps on a live table','Rings in every order with seat numbers, unprompted','Checks the apps at two bites or one roll and takes the entree order on it',"Explains the host's one-for-one and how it feeds their section"] },
     { shift:8, title:'The Skill Out',
       plan:['Revisit and review: the steps, the minimums, seat numbers.','Selling. Open with a recommendation. Assume you are right. Specials get a special description.','Selling goals. Set them together and record them: which dishes you intend to sell and how many. The team tracks them, which is how we know when to help and when to celebrate.'],
       floor:"The small section again, with the trainer's attention on salesmanship and table upkeep. The trainee sells their minimums in their own words, plants the dessert seed on the first quality check, and closes unhurried. Focus on teamwork.",
@@ -2983,7 +2989,7 @@ function trHandbook(){
   const pane = $('tab-training');
   const rows = [
     ['meet',     'Meet the Team',       'Who is who: first names and jobs'],
-    ['sos',      'Steps of Service',    '11 table touches, each with an owner'],
+    ['sos',      'Steps of Service',    '8 table touches, each with an owner'],
     ['sops',     'Our Way',             'The SOPs: why, when, and the steps'],
     ['style',    "The Server's Style",  'Make a friend, tour the menu, your scripts'],
     ['pos',      'The POS Basics',      'What the register will ask of you'],
@@ -3153,13 +3159,18 @@ function sopDrillGrade(){
 function trSos(){
   const pane = $('tab-training');
   const steps = manual().sos.map(t => `
-    <div class="flex gap-3 items-baseline py-2.5 border-t border-line/50 first:border-t-0">
+    <div class="flex gap-3 py-2.5 border-t border-line/50 first:border-t-0">
       <span class="font-display text-lg text-gold w-6 flex-shrink-0">${t.step}</span>
       <div class="flex-1">
-        <p class="text-sm text-text font-medium">${esc(t.title)}</p>
+        <div class="flex items-baseline justify-between gap-2">
+          <p class="text-sm text-text font-medium">${esc(t.title)}</p>
+          <span class="text-[10px] text-muted border border-line rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">${esc(t.owner)}</span>
+        </div>
         <p class="text-xs text-muted leading-relaxed mt-0.5">${esc(t.detail)}</p>
+        ${(t.always&&t.always.length) ? `
+        <p class="text-[10px] uppercase tracking-wider text-golddim mt-1.5">We Always</p>
+        <ul class="list-disc pl-5 space-y-1 mt-0.5">${t.always.map(a => `<li class="text-xs text-text leading-relaxed">${esc(a)}</li>`).join('')}</ul>` : ''}
       </div>
-      <span class="text-[10px] text-muted border border-line rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">${esc(t.owner)}</span>
     </div>`).join('');
   const upkeep = manualPages('upkeep')[0];
   pane.innerHTML = `
@@ -3170,7 +3181,7 @@ function trSos(){
     <div class="bg-surface border border-line rounded-xl px-4 py-1 mb-3">${steps}</div>
     ${upkeep ? `<div class="border-l-2 border-gold bg-surface rounded-r-xl px-3.5 py-2.5 mb-4">
       <p class="text-xs uppercase tracking-wider text-golddim mb-0.5">${esc(upkeep.title)}</p>
-      <p class="text-sm text-text leading-relaxed">${esc(upkeep.body)}</p>
+      ${fmtContent(upkeep.body)}
     </div>` : ''}
     <button onclick="startSosQuiz()" class="w-full bg-gold text-bg font-semibold py-3 rounded-lg">Quiz: who owns each step? →</button>`;
 }

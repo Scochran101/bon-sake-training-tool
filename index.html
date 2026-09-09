@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 30;           // shown on the login screen; bump with each release
+const APP_VERSION = 31;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -1698,19 +1698,28 @@ function optionCount(n){
   // <=8 ingredients -> x1.5 ; >=9 -> x1.25 ; round UP
   return (n <= 8) ? Math.ceil(n * 1.5) : Math.ceil(n * 1.25);
 }
+// Which side of the menu an item lives on, for decoy fairness: food dishes
+// draw decoys from food, drinks from drinks. Before this, a sushi roll could
+// offer "St Roch Vodka" as a decoy, which is a free point, not a test.
+function drinkSide(it){
+  return DRINK_SECTIONS.indexOf(it.section) !== -1 || it.section === 'Bar Prep' || !!wineTypeOf(it.section);
+}
 function buildSelectAll(item){
   const correct = item.ingredients.slice();
   const correctLower = new Set(correct.map(s => s.toLowerCase()));
   const total = optionCount(correct.length);
   const need = Math.max(0, total - correct.length);
 
-  // decoy pool: ingredients from OTHER items, not present in this item, unique.
-  // The matchRecall guard also rejects any decoy the spelling-lenient matcher
-  // would read as one of this dish's real ingredients (e.g. a word-order or
-  // spelling variant), so the same ingredient can never appear twice.
+  // decoy pool: ingredients from OTHER items on the SAME side of the menu,
+  // not present in this item, unique. The matchRecall guard also rejects any
+  // decoy the spelling-lenient matcher would read as one of this dish's real
+  // ingredients (e.g. a word-order or spelling variant), so the same
+  // ingredient can never appear twice.
+  const side = drinkSide(item);
   const poolSet = new Set();
   S.menu.forEach(it => {
     if(it.item_id === item.item_id) return;
+    if(drinkSide(it) !== side) return;
     it.ingredients.forEach(ing => {
       const low = ing.toLowerCase();
       if(!correctLower.has(low) && !matchRecall(ing, correct)) poolSet.add(ing);
@@ -4215,7 +4224,7 @@ function submitSelectAll(){
   const q = t.questions[t.idx];
   const isAllergen = q.type === 'allergen';
   const correct = new Set(Array.from(q.correct).map(s => s.toLowerCase()));
-  let allRight = true;
+  let allRight = true, missed = 0, wrongPicks = 0;
   document.querySelectorAll('#saGrid .saOpt').forEach(btn => {
     const label = btn.textContent.replace(/^[✓✗＋]\s/, '').trim();
     const isCorrect = correct.has(label.toLowerCase());
@@ -4228,15 +4237,21 @@ function submitSelectAll(){
       else if(isCorrect && !sel){ saGlow(btn,'green'); btn.innerHTML='＋ '+esc(label); allRight=false; }
       else if(!isCorrect && sel){ saGlow(btn,'red'); btn.innerHTML='✗ '+esc(label); allRight=false; }
     } else {
-      // Ingredient test: every correct ingredient glows green AND carries a ✓
-      // (belongs in this dish); wrong ones glow red. The ✗ flags the wrong
-      // ones the team member actually selected. The marks mean the result
-      // reads without color vision.
-      if(isCorrect){ saGlow(btn,'green'); btn.innerHTML='✓ '+esc(label); if(!sel) allRight=false; }
-      else { saGlow(btn,'red'); if(sel){ btn.innerHTML='✗ '+esc(label); allRight=false; } }
+      // Ingredient test: ✓ = belongs and you selected it. ＋ = belongs and
+      // you MISSED it (this used to show as a plain ✓, which made a missed
+      // ingredient look like a perfect answer that failed; Marie hit exactly
+      // that on the Bimini Bay). ✗ = doesn't belong but you picked it. The
+      // marks mean the result reads without color vision.
+      if(isCorrect && sel){ saGlow(btn,'green'); btn.innerHTML='✓ '+esc(label); }
+      else if(isCorrect && !sel){ saGlow(btn,'green'); btn.innerHTML='＋ '+esc(label); allRight=false; missed++; }
+      else { saGlow(btn,'red'); if(sel){ btn.innerHTML='✗ '+esc(label); allRight=false; wrongPicks++; } }
     }
   });
-  gradeAndReveal(allRight, q.item);
+  // Say exactly what went wrong, so a near-miss never reads as a mystery.
+  let note = '';
+  if(missed) note += `You missed ${missed} that belong${missed===1?'s':''}, marked ＋. `;
+  if(wrongPicks) note += `${wrongPicks} of your picks do${wrongPicks===1?'es':''} not belong, marked ✗.`;
+  gradeAndReveal(allRight, q.item, null, note.trim());
   $('saSubmit').classList.add('hidden'); readyNext('saNext');
 }
 // Applies the green ("belongs") or red ("does not belong") glow to an option.
@@ -4434,7 +4449,7 @@ function answerMCQ(i){
 }
 
 /* ---- Shared grading + reveal (for select-all / word bank) ---------------- */
-function gradeAndReveal(allRight, item, resultElId){
+function gradeAndReveal(allRight, item, resultElId, note){
   recordOutcome(allRight, item);
   const q = S.test.questions[S.test.idx];
   const elId = resultElId || (q.type==='wordbank' ? 'wbResult' : 'saResult');
@@ -4447,7 +4462,8 @@ function gradeAndReveal(allRight, item, resultElId){
       ${parts.meta.map(m => `<p class="text-xs text-muted mt-0.5"><span class="text-golddim uppercase tracking-wider">${esc(m.k)}</span> · ${esc(m.v)}</p>`).join('')}</div>`;
   }
   const head = allRight ? `<p class="text-pass font-semibold">Correct!</p>` : `<p class="text-fail font-semibold">Not quite. Review the highlights.</p>`;
-  el.innerHTML = (el.innerHTML || '') + head + sell;
+  const noteHtml = (!allRight && note) ? `<p class="text-sm text-text mt-1">${esc(note)}</p>` : '';
+  el.innerHTML = (el.innerHTML || '') + head + noteHtml + sell;
 }
 
 function recordOutcome(right, item){

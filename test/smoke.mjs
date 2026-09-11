@@ -60,7 +60,7 @@ const mustExist = [
   'isTrainerUser','shiftPlanFor','trShiftChips','trShift','startCloseout','coPickRating','submitCloseout',
   'loadTraineeBoard','fillTraineeBoard','openTrainee','trTrainee','soPickShift','soToggle',
   'submitShiftSignoff','trRecordCheck','trTrainerRef',
-  'descParts','dishTaste','dishTasteReady','flavorVocab','buildFlavorQuiz'
+  'descParts','dishTaste','dishTasteReady','flavorVocab','buildFlavorQuiz','drinkSide','wrapperOf'
 ];
 mustExist.forEach(f => ok(f + ' defined', typeof w[f] === 'function', typeof w[f]));
 

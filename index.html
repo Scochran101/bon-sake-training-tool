@@ -278,7 +278,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8FgHES7bUkI2YeFvFIo8AYf5YKC_PqmBKBMzQPUf_PtH7i/exec";
 
 // ---- Tunable settings -----------------------------------------------------
-const APP_VERSION = 31;           // shown on the login screen; bump with each release
+const APP_VERSION = 32;           // shown on the login screen; bump with each release
 const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
 const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
 const DESC_QUESTIONS     = 15;   // Description Recall question count
@@ -1562,9 +1562,9 @@ function renderItemDetail(id){
 
     ${photo ? `<div class="mt-4" data-photo>${photo}</div>` : ''}
 
-    ${it.ingredients.length ? `<hr class="border-line my-5"/>
+    ${(it.ingredients.length || wrapperOf(it)) ? `<hr class="border-line my-5"/>
     <p class="text-xs uppercase tracking-wider text-golddim mb-2">What's In It</p>
-    <div>${chips}</div>` : ''}
+    <div>${wrapperOf(it) ? `<span class="inline-block border border-gold text-gold rounded-full px-3 py-1 text-sm mr-2 mb-2">Wrapped in ${esc(wrapperOf(it))}</span>` : ''}${chips}</div>` : ''}
 
     ${extrasHtml}
 
@@ -1704,8 +1704,20 @@ function optionCount(n){
 function drinkSide(it){
   return DRINK_SECTIONS.indexOf(it.section) !== -1 || it.section === 'Bar Prep' || !!wineTypeOf(it.section);
 }
+// The wrap, when a dish has one (Nori or Soy Paper; blank or None = no wrap).
+// It lives in the sheet's wrapper column, next to the ingredients.
+function wrapperOf(it){
+  const w = String((it && it.wrapper) || '').trim();
+  return (w && w.toLowerCase() !== 'none') ? w : '';
+}
+const OPPOSITE_WRAP = { 'nori': 'Soy Paper', 'soy paper': 'Nori' };
 function buildSelectAll(item){
   const correct = item.ingredients.slice();
+  // The wrap is part of knowing the roll (guests ask nori or soy paper more
+  // than anything else), so it joins the answers, and the OTHER wrap is
+  // always planted as a decoy. Managers asked for exactly this distinction.
+  const wrap = wrapperOf(item);
+  if(wrap) correct.push(wrap);
   const correctLower = new Set(correct.map(s => s.toLowerCase()));
   const total = optionCount(correct.length);
   const need = Math.max(0, total - correct.length);
@@ -1729,7 +1741,14 @@ function buildSelectAll(item){
   const seen = new Set(); const pool = [];
   poolSet.forEach(ing => { const l = ing.toLowerCase(); if(!seen.has(l)){ seen.add(l); pool.push(ing); } });
 
-  const decoys = sample(pool, need);
+  const opp = wrap ? OPPOSITE_WRAP[wrap.toLowerCase()] : '';
+  let decoys;
+  if(opp && need >= 1){
+    const rest = pool.filter(p => p.toLowerCase() !== opp.toLowerCase());
+    decoys = [opp].concat(sample(rest, need - 1));
+  } else {
+    decoys = sample(pool, need);
+  }
   const options = correct.concat(decoys).sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   return { item, options, correct: new Set(correct) };
 }

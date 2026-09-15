@@ -84,6 +84,13 @@
   .prow .qty { font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; min-width:56px; text-align:right; }
   .prow .qty.zero { color:var(--muted); font-weight:600; }
   .prow.touched { border-color:var(--accent); }
+  .prow.sel { border-color:var(--accent); background:var(--accent-soft); }
+  .prow .tick { font-size:19px; margin-right:10px; color:var(--accent); }
+  #selbar { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
+            padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; gap:8px; align-items:center; z-index:70; }
+  #selbar .cnt { font-weight:700; font-size:14px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  #selbar input { flex:1; min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#fff; }
+  #selbar .primary { width:auto; padding:10px 16px; }
   .searchbar { width:100%; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:var(--card); margin-bottom:4px; }
 
   /* Keypad overlay */
@@ -214,8 +221,8 @@
    answer a CORS preflight and every save would break.
 =========================================================================== */
 const BACKEND_URL      = 'https://script.google.com/macros/s/AKfycbxTcvecuuWjg3oXygP3fali1CWgbuZZe31hy1a65YZ-JgiJtePvZ3F3-88nliOAZE0e/exec';
-const FRONTEND_VERSION = 'inv-fe-1.0.0';
-const EXPECTED_BACKEND = 'bonsake-inv-1.0.0';
+const FRONTEND_VERSION = 'inv-fe-1.1.0';
+const EXPECTED_BACKEND = 'bonsake-inv-1.0.1';
 const DEMO = !/^https:/.test(BACKEND_URL);
 
 const LS = {
@@ -246,7 +253,8 @@ const S = {
   view: 'home', backStack: [],
   zone: null,
   inflight: false, waitingSignal: false, flushTimer: null, backoff: 2000,
-  countSearch: ''
+  countSearch: '',
+  selectMode: false, selected: {}, selDist: ''
 };
 
 /* ---------------- Tiny helpers ---------------- */
@@ -442,11 +450,13 @@ function go(view, opts){
   S.backStack.push(S.view);
   S.view = view;
   if (opts && opts.zone) S.zone = opts.zone;
+  S.selectMode = false; S.selected = {}; S.selDist = '';
   render();
   window.scrollTo(0,0);
 }
 function goBack(){
   S.view = S.backStack.pop() || 'home';
+  S.selectMode = false; S.selected = {}; S.selDist = '';
   render(); window.scrollTo(0,0);
 }
 function render(){
@@ -617,18 +627,33 @@ async function undoDelivery(id){
 function renderProducts(){
   const q = (S.prodSearch || '').toLowerCase();
   let html = '<input class="searchbar" placeholder="Search products…" value="' + esc(S.prodSearch || '') + '" oninput="S.prodSearch=this.value;render()">';
-  html += '<button class="ghost" style="margin:8px 0 14px" onclick="openAddProduct()">＋ New product</button>';
+  html += '<div class="row2" style="margin:8px 0 14px">' +
+          '<button class="ghost" onclick="openAddProduct()">＋ New product</button>' +
+          '<button class="ghost"' + (S.selectMode ? ' style="border-color:var(--accent);color:var(--accent)"' : '') +
+          ' onclick="toggleSelectMode()">' + (S.selectMode ? 'Done selecting' : 'Assign distributor') + '</button></div>';
+  if (S.selectMode) html += '<p class="small muted" style="margin:-6px 0 10px">Tap products to select them, then pick the distributor below.</p>';
   const all = (S.boot && S.boot.products || []).filter(p => !q || String(p.Name).toLowerCase().indexOf(q) !== -1);
   categoriesInOrder(all).forEach(cat => {
     const items = all.filter(p => (p.Category||'Other') === cat);
     if (!items.length) return;
     html += '<div class="cat-head"><h3>' + esc(cat) + '</h3></div>';
     items.forEach(p => {
-      html += '<button class="prow" onclick="openEditProduct(\'' + p.ProductID + '\')"><span class="nm">' + esc(p.Name) +
-              (p.Active === 'Y' ? '' : ' <span class="flag bad">retired</span>') +
-              '</span><span class="small muted">par ' + (p.Par === '' || p.Par == null ? '–' : fmtQty(p.Par)) + '</span></button>';
+      const dist = String(p.Distributor || '').trim();
+      const rightSide = S.selectMode
+        ? '<span class="small muted">' + (dist ? esc(dist) : 'no distributor') + '</span>'
+        : '<span class="small muted">par ' + (p.Par === '' || p.Par == null ? '–' : fmtQty(p.Par)) + '</span>';
+      if (S.selectMode) {
+        const isSel = !!S.selected[p.ProductID];
+        html += '<button class="prow' + (isSel ? ' sel' : '') + '" onclick="toggleSelect(\'' + p.ProductID + '\')">' +
+                '<span class="tick">' + (isSel ? '☑' : '☐') + '</span><span class="nm">' + esc(p.Name) + '</span>' + rightSide + '</button>';
+      } else {
+        html += '<button class="prow" onclick="openEditProduct(\'' + p.ProductID + '\')"><span class="nm">' + esc(p.Name) +
+                (p.Active === 'Y' ? '' : ' <span class="flag bad">retired</span>') +
+                '</span>' + rightSide + '</button>';
+      }
     });
   });
+  if (S.selectMode) { html += '<div style="height:78px"></div>' + selbarHtml(); }
   html += '<div class="card" style="margin-top:16px"><h2 class="sec" style="font-size:16px">Zones</h2>';
   (S.boot && S.boot.zones || []).forEach(z => {
     html += '<div class="listline"><span>' + esc(z.Name) + (z.Active === 'Y' ? '' : ' <span class="flag bad">hidden</span>') + '</span>' +
@@ -639,6 +664,38 @@ function renderProducts(){
 }
 function categoryOptions(sel){
   return CATEGORY_ORDER.map(c => '<option' + (c === sel ? ' selected' : '') + '>' + esc(c) + '</option>').join('');
+}
+function toggleSelectMode(){
+  S.selectMode = !S.selectMode; S.selected = {}; S.selDist = '';
+  render();
+}
+function toggleSelect(pid){
+  if (S.selected[pid]) delete S.selected[pid]; else S.selected[pid] = true;
+  render();
+}
+function selbarHtml(){
+  const n = Object.keys(S.selected).length;
+  const dists = {};
+  (S.boot && S.boot.products || []).forEach(p => { const d = String(p.Distributor || '').trim(); if (d) dists[d] = true; });
+  const datalist = '<datalist id="dist-list">' +
+    Object.keys(dists).sort().map(d => '<option value="' + esc(d) + '">').join('') + '</datalist>';
+  return '<div id="selbar"><span class="cnt">' + n + ' selected</span>' +
+    '<input id="sel-dist" list="dist-list" placeholder="Distributor (blank clears)" value="' + esc(S.selDist) + '" oninput="S.selDist=this.value">' +
+    datalist + '<button class="primary" onclick="applyDistributor()">Apply</button></div>';
+}
+async function applyDistributor(){
+  const ids = Object.keys(S.selected);
+  if (!ids.length) { toast('Tap products to select them first.'); return; }
+  const dist = String(S.selDist || '').trim();
+  try {
+    const r = await apiPost('assignDistributor', { productIds: ids, distributor: dist });
+    if (r && r.ok) {
+      toast(dist ? ('Distributor set on ' + r.updated + ' product' + (r.updated === 1 ? '' : 's') + ' ✓')
+                 : ('Distributor cleared on ' + r.updated + ' ✓'));
+      S.selectMode = false; S.selected = {}; S.selDist = '';
+      await refreshBoot(false); render();
+    } else toast((r && r.error) || 'Not saved', 3800);
+  } catch(e) { offlineToast(e, 'No connection. Assigning needs signal.'); }
 }
 function openAddProduct(){
   openModal('<h2 class="sec">New product</h2>' +
@@ -959,6 +1016,14 @@ function demoApi_(action, data){
     db.nextId++; const id = 'P' + String(db.nextId).padStart(3,'0');
     db.products.push({ ProductID:id, Department:'Bar', Category:data.category || 'Liquor', Name:data.name, Unit:data.unit || 'btl', PurchaseUnit:'', PackSize:'', Par:'', Price:'', Distributor:'', Notes:'', Active:'Y', SortOrder:'' });
     return { ok:true, productId:id };
+  }
+  if (action === 'assignDistributor') {
+    let updated = 0;
+    (data.productIds || []).forEach(function (id) {
+      const p = db.products.find(x => x.ProductID === id);
+      if (p) { p.Distributor = data.distributor || ''; updated++; }
+    });
+    return { ok:true, updated: updated };
   }
   if (action === 'updateProduct') {
     const p = db.products.find(x => x.ProductID === data.productId);

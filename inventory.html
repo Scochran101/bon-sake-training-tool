@@ -3,17 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#1c2128">
+<meta name="theme-color" content="#0A0A0A">
 <title>Bon Sake Inventory</title>
 <link rel="icon" href="logo.png">
 <style>
   /* Self-contained on purpose: this page shares NO code or styles with the
-     training app, so an inventory change can never break training. */
+     training app, so an inventory change can never break training.
+     Palette mirrors the Ops app: #0A0A0A ground, #C9A84C gold. */
   :root {
-    --paper:#f7f7f4; --card:#ffffff; --ink:#1c2128; --muted:#6b7280;
-    --line:#e4e4dd; --accent:#3a5a9b; --accent-soft:#e9eef8;
-    --good:#2e7d4f; --warn:#b45309; --bad:#b91c1c;
-    --z1:#2f5d9e; --z1-soft:#e7eefa; --z2:#2e7d4f; --z2-soft:#e6f4ec;
+    --paper:#0A0A0A; --card:#161513; --ink:#efe8d8; --muted:#9a917c;
+    --line:#2a2822; --accent:#C9A84C; --accent-soft:#241d0c; --golddim:#9c8a52;
+    --good:#5cbb8a; --good-soft:#12301f; --warn:#e0a33b; --warn-soft:#3a2b10;
+    --bad:#e26d6d; --bad-soft:#3a1515;
+    --z1:#3e6cb8; --z1-soft:#141f33; --z2:#35945f; --z2-soft:#0f281a;
+    color-scheme: dark;
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body { margin:0; padding:0; }
@@ -28,19 +31,22 @@
   .banner { padding:9px 14px; font-size:13.5px; font-weight:600; text-align:center; }
   .banner button { text-decoration:underline; font-weight:700; margin-left:8px; }
   .banner.demo { background:#3b3358; color:#fff; }
-  .banner.warn { background:#fef3c7; color:#92400e; }
-  .banner.bad  { background:#fee2e2; color:#991b1b; }
+  .banner.warn { background:var(--warn-soft); color:var(--warn); }
+  .banner.bad  { background:var(--bad-soft); color:var(--bad); }
   .banner.info { background:var(--accent-soft); color:var(--accent); }
 
   /* App header */
   header.app { position:sticky; top:0; z-index:50; background:var(--card); border-bottom:1px solid var(--line);
                display:flex; align-items:center; gap:8px; padding:10px 12px; }
   header.app .back { font-size:22px; padding:4px 10px 4px 2px; color:var(--muted); }
+  header.app .hlogo { width:26px; height:26px; border-radius:6px; object-fit:cover; }
   header.app h1 { font-size:17px; font-weight:700; margin:0; flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .opsbtn { border:1px solid var(--golddim); color:var(--accent); font-size:12px; font-weight:700;
+            letter-spacing:.08em; text-transform:uppercase; border-radius:999px; padding:5px 12px; }
   #chip { font-size:12px; font-weight:700; padding:5px 10px; border-radius:999px; white-space:nowrap; }
-  #chip.ok   { background:var(--z2-soft); color:var(--good); }
+  #chip.ok   { background:var(--good-soft); color:var(--good); }
   #chip.busy { background:var(--accent-soft); color:var(--accent); }
-  #chip.wait { background:#fef3c7; color:#92400e; }
+  #chip.wait { background:var(--warn-soft); color:var(--warn); }
 
   main { padding:14px; max-width:640px; margin:0 auto; }
 
@@ -61,7 +67,7 @@
   .bigbtn .ico { font-size:26px; }
   .bigbtn .t { font-size:17px; font-weight:700; }
   .bigbtn .s { font-size:13px; color:var(--muted); }
-  .primary { background:var(--accent); color:#fff; border-radius:12px; padding:14px 18px; font-weight:700; font-size:16px; width:100%; }
+  .primary { background:var(--accent); color:#0A0A0A; border-radius:12px; padding:14px 18px; font-weight:700; font-size:16px; width:100%; }
   .primary:disabled { opacity:.5; }
   .ghost { border:1px solid var(--line); background:var(--card); border-radius:12px; padding:12px 16px; font-weight:600; width:100%; }
 
@@ -89,7 +95,7 @@
   #selbar { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line);
             padding:10px 14px calc(10px + env(safe-area-inset-bottom)); display:flex; gap:8px; align-items:center; z-index:70; }
   #selbar .cnt { font-weight:700; font-size:14px; white-space:nowrap; font-variant-numeric:tabular-nums; }
-  #selbar input { flex:1; min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#fff; }
+  #selbar input { flex:1; min-width:0; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:#101010; color:var(--ink); }
   #selbar .primary { width:auto; padding:10px 16px; }
   .searchbar { width:100%; padding:11px 14px; border:1px solid var(--line); border-radius:12px; background:var(--card); margin-bottom:4px; }
 
@@ -101,8 +107,10 @@
   .kp-head .pv { color:var(--muted); font-size:13px; }
   .kp-entry { text-align:center; font-size:40px; font-weight:800; font-variant-numeric:tabular-nums; padding:6px 0 10px; min-height:58px; }
   .kp-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-  .kp-grid button { background:var(--paper); border:1px solid var(--line); border-radius:12px; font-size:24px; font-weight:700; padding:14px 0; }
+  .kp-grid button { background:#1d1b17; border:1px solid var(--line); border-radius:12px; font-size:24px; font-weight:700; padding:14px 0; }
   .tenths { display:grid; grid-template-columns:repeat(9,1fr); gap:5px; margin:10px 0 8px; }
+  .tenths.quarters { grid-template-columns:repeat(3,1fr); }
+  .tenths.quarters button { font-size:16px; padding:12px 0; }
   .tenths button { background:var(--accent-soft); color:var(--accent); border-radius:9px; font-size:13.5px; font-weight:700; padding:10px 0; }
   .kp-actions { display:flex; gap:8px; margin-top:10px; }
   .kp-actions .primary { flex:2; width:auto; }
@@ -111,28 +119,28 @@
   /* Forms + cards */
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; }
   .field { margin-bottom:12px; }
-  .field label { display:block; font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:4px; }
-  .field input, .field select, .field textarea { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; }
+  .field label { display:block; font-size:11.5px; font-weight:700; color:var(--golddim); text-transform:uppercase; letter-spacing:.08em; margin-bottom:4px; }
+  .field input, .field select, .field textarea { width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:10px; background:#101010; color:var(--ink); }
   .row2 { display:flex; gap:10px; } .row2 > * { flex:1; min-width:0; }
 
   /* Tables (reports, review) */
   .tscroll { overflow-x:auto; }
   table { border-collapse:collapse; width:100%; font-size:13.5px; background:var(--card); border-radius:12px; overflow:hidden; }
   th { text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted);
-       padding:9px 10px; border-bottom:1px solid var(--line); background:#fafaf7; }
+       padding:9px 10px; border-bottom:1px solid var(--line); background:#12110f; }
   td { padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
   tr:last-child td { border-bottom:none; }
   td.n { text-align:right; font-variant-numeric:tabular-nums; }
   th.n { text-align:right; }
   .flag { display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:2px 7px; margin-left:6px; }
-  .flag.warn { background:#fef3c7; color:#92400e; }
-  .flag.bad { background:#fee2e2; color:#991b1b; }
+  .flag.warn { background:var(--warn-soft); color:var(--warn); }
+  .flag.bad { background:var(--bad-soft); color:var(--bad); }
   .tabsbar { display:flex; gap:6px; margin-bottom:12px; }
   .tabsbar button { flex:1; padding:10px 4px; border-radius:10px; border:1px solid var(--line); background:var(--card); font-weight:700; font-size:13.5px; color:var(--muted); }
   .tabsbar button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
 
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:calc(24px + env(safe-area-inset-bottom));
-           background:var(--ink); color:#fff; font-size:14px; font-weight:600; padding:11px 18px; border-radius:12px;
+           background:var(--ink); color:#0A0A0A; font-size:14px; font-weight:600; padding:11px 18px; border-radius:12px;
            z-index:100; max-width:90vw; text-align:center; }
   .muted { color:var(--muted); } .small { font-size:13px; }
   h2.sec { font-size:19px; margin:4px 0 12px; }
@@ -164,7 +172,9 @@
 <div id="view-app" class="hidden">
   <header class="app">
     <button id="backbtn" class="back hidden" onclick="goBack()" aria-label="Back">‹</button>
+    <img src="logo.png" class="hlogo" alt="">
     <h1 id="title">Inventory</h1>
+    <button class="opsbtn" onclick="leaveToOps()">Ops</button>
     <span id="chip" class="ok">✓</span>
   </header>
   <div id="zonebanner" class="hidden"></div>
@@ -221,8 +231,8 @@
    answer a CORS preflight and every save would break.
 =========================================================================== */
 const BACKEND_URL      = 'https://script.google.com/macros/s/AKfycbxTcvecuuWjg3oXygP3fali1CWgbuZZe31hy1a65YZ-JgiJtePvZ3F3-88nliOAZE0e/exec';
-const FRONTEND_VERSION = 'inv-fe-1.1.0';
-const EXPECTED_BACKEND = 'bonsake-inv-1.0.1';
+const FRONTEND_VERSION = 'inv-fe-1.2.0';
+const EXPECTED_BACKEND = 'bonsake-inv-1.0.2';
 const DEMO = !/^https:/.test(BACKEND_URL);
 
 const LS = {
@@ -231,7 +241,8 @@ const LS = {
   counts: 'bonsake_inv_counts',
   outbox: 'bonsake_inv_outbox',
   started:'bonsake_inv_count_started',
-  usage:  'bonsake_inv_usage'
+  usage:  'bonsake_inv_usage',
+  lastOrder: 'bonsake_inv_last_order'
 };
 const FLUSH_DEBOUNCE_MS = 1200;
 const FLUSH_RETRY_MAX_MS = 60000;
@@ -254,7 +265,8 @@ const S = {
   zone: null,
   inflight: false, waitingSignal: false, flushTimer: null, backoff: 2000,
   countSearch: '',
-  selectMode: false, selected: {}, selDist: ''
+  selectMode: false, selected: {}, selDist: '',
+  lastOrder: lsGet('bonsake_inv_last_order', null)
 };
 
 /* ---------------- Tiny helpers ---------------- */
@@ -446,6 +458,18 @@ function showApp(){
   $('view-app').classList.remove('hidden');
   render();
 }
+// Back to the Ops app. With a count in progress, offer the two exits from
+// the spec: finish later (everything is already saved) or build the order.
+function leaveToOps(){
+  if (S.countStartedAt) {
+    openModal('<h2 class="sec">Count in progress</h2>' +
+      '<p class="small muted">Every number you entered is already saved. Build the order now, or come back and finish later.</p>' +
+      '<button class="primary" onclick="closeModal();go(\'closeout\')">Build the order</button>' +
+      '<button class="ghost" style="margin-top:8px" onclick="location.href=\'/\'">Save and finish later</button>');
+  } else {
+    location.href = '/';
+  }
+}
 function go(view, opts){
   S.backStack.push(S.view);
   S.view = view;
@@ -471,9 +495,9 @@ function render(){
     zb.classList.remove('hidden');
   } else zb.classList.add('hidden');
 
-  const titles = { home:'Inventory', zones:'Pick a location', count:'Count', restock:'Restock', products:'Products & zones', reports:'Reports', closeout:'Finish count' };
+  const titles = { home:'Inventory', zones:'Pick a location', count:'Count', restock:'Restock', products:'Products & zones', reports:'Reports', closeout:'Build the order', order:'Order' };
   $('title').textContent = titles[S.view] || 'Inventory';
-  const r = { home:renderHome, zones:renderZones, count:renderCount, restock:renderRestock, products:renderProducts, reports:renderReports, closeout:renderCloseout }[S.view] || renderHome;
+  const r = { home:renderHome, zones:renderZones, count:renderCount, restock:renderRestock, products:renderProducts, reports:renderReports, closeout:renderCloseout, order:renderOrder }[S.view] || renderHome;
   $('content').innerHTML = r();
   if (S.view === 'reports') openReportTab(S.reportTab || 'onhand');
 }
@@ -482,13 +506,14 @@ function renderHome(){
   const unsynced = S.outbox.length;
   const started = S.countStartedAt;
   let html = '';
-  if (unsynced) html += '<div class="card" style="border-color:#f2c94c;background:#fffbea"><b>' + unsynced + ' saved count' + (unsynced>1?'s':'') + ' not yet synced.</b><div class="small muted">They are safe on this phone. Keep the app open near signal until the chip shows ✓.</div></div>';
+  if (unsynced) html += '<div class="card" style="border-color:var(--warn);background:var(--warn-soft)"><b>' + unsynced + ' saved count' + (unsynced>1?'s':'') + ' not yet synced.</b><div class="small muted">They are safe on this phone. Keep the app open near signal until the chip shows ✓.</div></div>';
   if (started) html += '<button class="card" style="width:100%;text-align:left;border-color:var(--accent)" onclick="go(\'zones\')"><b>Count in progress</b>, started ' + esc(new Date(started).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})) + '<div class="linkbtn">Continue counting ›</div></button>';
   html += '<button class="bigbtn" onclick="go(\'zones\')"><span class="ico">🔢</span><span><span class="t">Count</span><br><span class="s">Walk a location and enter what is there</span></span></button>';
   html += '<button class="bigbtn" onclick="go(\'restock\')"><span class="ico">📦</span><span><span class="t">Restock</span><br><span class="s">Log a delivery that came in</span></span></button>';
   html += '<button class="bigbtn" onclick="go(\'products\')"><span class="ico">🍶</span><span><span class="t">Products &amp; zones</span><br><span class="s">Add, edit, or retire items</span></span></button>';
-  html += '<button class="bigbtn" onclick="go(\'reports\')"><span class="ico">📊</span><span><span class="t">Reports</span><br><span class="s">On-hand, usage, order sheet</span></span></button>';
-  if (started) html += '<button class="primary" style="margin-top:6px" onclick="go(\'closeout\')">Review &amp; finish count</button>';
+  html += '<button class="bigbtn" onclick="go(\'reports\')"><span class="ico">📊</span><span><span class="t">Reports</span><br><span class="s">On-hand, usage, past counts</span></span></button>';
+  if (S.lastOrder) html += '<button class="ghost" onclick="go(\'order\')">View last order</button>';
+  if (started) html += '<button class="primary" style="margin-top:6px" onclick="go(\'closeout\')">Build the order</button>';
   html += '<p class="small muted" style="text-align:center;margin-top:16px">' + esc(myName()) + ' · ' + FRONTEND_VERSION + (DEMO ? ' · DEMO' : '') + '</p>';
   return html;
 }
@@ -500,7 +525,7 @@ function renderZones(){
     html += '<button class="zone-card" style="background:' + st.bg + '" onclick="go(\'count\',{zone:\'' + z.ZoneID + '\'})">' +
             '<div class="t">' + esc(z.Name) + '</div><div class="s">Tap to count this location</div></button>';
   });
-  if (S.countStartedAt) html += '<button class="ghost" onclick="go(\'closeout\')">Review &amp; finish count</button>';
+  if (S.countStartedAt) html += '<button class="ghost" onclick="go(\'closeout\')">Build the order</button>';
   return html;
 }
 
@@ -515,7 +540,7 @@ function renderCount(){
   let html = '<input class="searchbar" placeholder="Search products…" value="' + esc(S.countSearch) + '" oninput="S.countSearch=this.value;renderCountListOnly()">';
   html += '<div id="countlist">' + countListHtml(zid) + '</div>';
   html += '<button class="ghost" style="margin-top:8px" onclick="openAddProduct()">＋ Add a product</button>';
-  html += '<button class="primary" style="margin-top:10px" onclick="go(\'closeout\')">Review &amp; finish count</button>';
+  html += '<button class="primary" style="margin-top:10px" onclick="go(\'closeout\')">Build the order</button>';
   return html;
 }
 function renderCountListOnly(){ const el = $('countlist'); if (el) el.innerHTML = countListHtml(S.zone); }
@@ -549,19 +574,24 @@ function openKeypad(pid){
   $('kp-name').textContent = p.Name;
   const prev = localQty(pid, S.zone);
   $('kp-prev').textContent = (prev === null ? 'not counted here yet' : 'currently ' + fmtQty(prev) + ' ' + (p.Unit || ''));
-  const tenths = $('kp-tenths'); tenths.innerHTML = '';
-  for (let i = 1; i <= 9; i++) {
-    const b = document.createElement('button'); b.textContent = '.' + i;
-    b.onclick = function(){ kpTenth(i); };
-    tenths.appendChild(b);
-  }
+  // Case-counted products get quarter buttons (1 case + half a loose case
+  // = 1 then .5); everything else gets tenths for open bottles.
+  const isCase = /^(cs|case|cases)$/i.test(String(p.Unit || '').trim());
+  const quick = $('kp-tenths'); quick.innerHTML = '';
+  quick.classList.toggle('quarters', isCase);
+  const fractions = isCase ? ['25', '5', '75'] : ['1','2','3','4','5','6','7','8','9'];
+  fractions.forEach(function(f){
+    const b = document.createElement('button'); b.textContent = '.' + f;
+    b.onclick = function(){ kpFraction(f); };
+    quick.appendChild(b);
+  });
   kpPaint();
   $('keypad').classList.remove('hidden');
 }
 function kpPaint(){ $('kp-entry').textContent = KP.entry === '' ? '0' : KP.entry; }
 function kpDigit(d){ if (KP.entry.replace('.','').length >= 5) return; if (KP.entry === '0') KP.entry = ''; KP.entry += d; kpPaint(); }
 function kpDot(){ if (KP.entry.indexOf('.') !== -1) return; KP.entry = (KP.entry === '' ? '0' : KP.entry) + '.'; kpPaint(); }
-function kpTenth(n){ const whole = KP.entry.split('.')[0] || '0'; KP.entry = whole + '.' + n; kpPaint(); }
+function kpFraction(f){ const whole = KP.entry.split('.')[0] || '0'; KP.entry = whole + '.' + f; kpPaint(); }
 function kpBack(){ KP.entry = KP.entry.slice(0, -1); kpPaint(); }
 function kpCancel(){ $('keypad').classList.add('hidden'); }
 function kpSave(){
@@ -654,6 +684,15 @@ function renderProducts(){
     });
   });
   if (S.selectMode) { html += '<div style="height:78px"></div>' + selbarHtml(); }
+  html += '<div class="card" style="margin-top:16px"><h2 class="sec" style="font-size:16px">Distributors</h2>';
+  const distRows = ((S.boot && S.boot.distributors) || []).filter(d => d.Active === 'Y');
+  if (!distRows.length) html += '<p class="small muted">None yet. Add one with the rep’s email and the order screen can email them directly.</p>';
+  distRows.forEach(d => {
+    html += '<div class="listline"><span>' + esc(d.Name) +
+      '<span class="un">' + (String(d.Email || '').trim() ? esc(d.Email) : 'no email') + '</span></span>' +
+      '<button class="linkbtn" onclick="openEditDistributor(\'' + esc(String(d.DistributorID)) + '\')">Edit</button></div>';
+  });
+  html += '<button class="ghost" style="margin-top:10px" onclick="openAddDistributor(\'\')">＋ New distributor</button></div>';
   html += '<div class="card" style="margin-top:16px"><h2 class="sec" style="font-size:16px">Zones</h2>';
   (S.boot && S.boot.zones || []).forEach(z => {
     html += '<div class="listline"><span>' + esc(z.Name) + (z.Active === 'Y' ? '' : ' <span class="flag bad">hidden</span>') + '</span>' +
@@ -677,6 +716,7 @@ function selbarHtml(){
   const n = Object.keys(S.selected).length;
   const dists = {};
   (S.boot && S.boot.products || []).forEach(p => { const d = String(p.Distributor || '').trim(); if (d) dists[d] = true; });
+  (S.boot && S.boot.distributors || []).forEach(d => { const nm = String(d.Name || '').trim(); if (nm && d.Active === 'Y') dists[nm] = true; });
   const datalist = '<datalist id="dist-list">' +
     Object.keys(dists).sort().map(d => '<option value="' + esc(d) + '">').join('') + '</datalist>';
   return '<div id="selbar"><span class="cnt">' + n + ' selected</span>' +
@@ -746,6 +786,40 @@ async function setProductActive(pid, active){
     if (r && r.ok) { closeModal(); toast(active ? 'Back in the list' : 'Retired'); await refreshBoot(false); render(); }
   } catch(e) { offlineToast(e, 'No connection.'); }
 }
+function openAddDistributor(prefillName){
+  openModal('<h2 class="sec">New distributor</h2>' +
+    '<div class="field"><label>Name</label><input id="nd-name" value="' + esc(prefillName || '') + '" placeholder="e.g. Republic"></div>' +
+    '<div class="field"><label>Rep’s email</label><input id="nd-email" type="email" inputmode="email" autocomplete="off" placeholder="rep@distributor.com"></div>' +
+    '<button class="primary" onclick="saveNewDistributor()">Add distributor</button>' +
+    '<p class="small muted" style="margin:10px 0 0">With an email saved, the order screen can open a ready-to-send email to this rep.</p>');
+}
+async function saveNewDistributor(){
+  const name = $('nd-name').value.trim();
+  if (!name) { toast('Give it a name'); return; }
+  try {
+    const r = await apiPost('addDistributor', { name: name, email: $('nd-email').value.trim() });
+    if (r && r.ok) { closeModal(); toast('Added ✓'); await refreshBoot(false); render(); }
+    else toast((r && r.error) || 'Not added', 3600);
+  } catch(e) { offlineToast(e, 'No connection. Adding a distributor needs signal.'); }
+}
+function openEditDistributor(id){
+  const d = ((S.boot && S.boot.distributors) || []).find(x => String(x.DistributorID) === String(id));
+  if (!d) return;
+  openModal('<h2 class="sec">' + esc(d.Name) + '</h2>' +
+    '<div class="field"><label>Name</label><input id="ed-name" value="' + esc(d.Name) + '"></div>' +
+    '<div class="field"><label>Rep’s email</label><input id="ed-email" type="email" inputmode="email" value="' + esc(d.Email || '') + '"></div>' +
+    '<button class="primary" onclick="saveEditDistributor(\'' + esc(String(id)) + '\')">Save</button>' +
+    '<p class="small muted" style="margin:10px 0 0">Renaming here also renames it on every product that uses it.</p>');
+}
+async function saveEditDistributor(id){
+  const name = $('ed-name').value.trim();
+  if (!name) { toast('Name cannot be blank'); return; }
+  try {
+    const r = await apiPost('updateDistributor', { distributorId: id, name: name, email: $('ed-email').value.trim() });
+    if (r && r.ok) { closeModal(); toast('Saved ✓'); await refreshBoot(false); render(); }
+    else toast((r && r.error) || 'Not saved', 3600);
+  } catch(e) { offlineToast(e, 'No connection. Distributor edits need signal.'); }
+}
 function openAddZone(){
   openModal('<h2 class="sec">New zone</h2><div class="field"><label>Name</label><input id="nz-name" placeholder="e.g. Beer Walk-In"></div>' +
             '<button class="primary" onclick="saveNewZone()">Add zone</button>');
@@ -776,16 +850,55 @@ function renderReports(){
   return '<div class="tabsbar">' +
     '<button id="rt-onhand" onclick="openReportTab(\'onhand\')">On-hand</button>' +
     '<button id="rt-usage" onclick="openReportTab(\'usage\')">Usage</button>' +
-    '<button id="rt-order" onclick="openReportTab(\'order\')">Order sheet</button></div>' +
+    '<button id="rt-past" onclick="openReportTab(\'past\')">Past</button></div>' +
     '<div id="report-body"></div>';
 }
 function openReportTab(tab){
   S.reportTab = tab;
-  ['onhand','usage','order'].forEach(t => { const b = $('rt-' + t); if (b) b.classList.toggle('on', t === tab); });
+  ['onhand','usage','past'].forEach(t => { const b = $('rt-' + t); if (b) b.classList.toggle('on', t === tab); });
   const body = $('report-body'); if (!body) return;
   if (tab === 'onhand') body.innerHTML = onhandHtml();
-  if (tab === 'order') body.innerHTML = orderHtml();
+  if (tab === 'past') body.innerHTML = pastListHtml();
   if (tab === 'usage') { body.innerHTML = '<p class="muted small">Loading usage…</p>'; loadUsage(); }
+}
+function pastListHtml(){
+  const snaps = ((S.boot && S.boot.snapshots) || []).slice().reverse();
+  if (!snaps.length) return '<div class="card">No past counts yet. The first Build the order creates one.</div>';
+  let html = '<p class="small muted">Every finished count, newest first. Tap one to see exactly what was counted.</p>';
+  snaps.forEach(function(s){
+    html += '<button class="prow" onclick="loadPastCount(\'' + esc(String(s.SnapshotID)) + '\')">' +
+      '<span class="nm">Count #' + esc(String(s.SnapshotID)) +
+      '<span class="un">' + esc(new Date(s.FinishedAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})) + '</span></span>' +
+      '<span class="small muted">' + esc(s.By || '') + '</span></button>';
+  });
+  return html;
+}
+async function loadPastCount(id){
+  const body = $('report-body'); if (!body) return;
+  body.innerHTML = '<p class="muted small">Loading count #' + esc(id) + '…</p>';
+  try {
+    const r = await apiGet('snapshot', { id: id });
+    if (!r || r.ok === false) { body.innerHTML = '<div class="card">' + esc((r && r.error) || 'Could not load it.') + '</div>'; return; }
+    const totals = {};
+    (r.lines || []).forEach(function(l){ totals[l.ProductID] = (totals[l.ProductID] || 0) + (Number(l.Qty) || 0); });
+    let html = '<button class="linkbtn" onclick="openReportTab(\'past\')">‹ All past counts</button>' +
+      '<p class="small muted" style="margin-top:8px">Count #' + esc(id) + ', finished ' +
+      esc(new Date(r.snapshot.FinishedAt).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})) +
+      ' by ' + esc(r.snapshot.By || '') + (r.snapshot.Notes ? '. Note: ' + esc(r.snapshot.Notes) : '') + '</p>';
+    html += '<div class="tscroll"><table><tr><th>Product</th><th class="n">Counted</th></tr>';
+    categoriesInOrder(products()).forEach(function(cat){
+      const rows = products().filter(function(p){ return (p.Category || 'Other') === cat && totals[p.ProductID] !== undefined; });
+      if (!rows.length) return;
+      html += '<tr><td colspan="2" style="background:#12110f;font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted)">' + esc(cat) + '</td></tr>';
+      rows.forEach(function(p){
+        html += '<tr><td>' + esc(p.Name) + '</td><td class="n">' + fmtQty(totals[p.ProductID]) + ' ' + esc(p.Unit || '') + '</td></tr>';
+      });
+    });
+    html += '</table></div>';
+    body.innerHTML = html;
+  } catch(e) {
+    if (String(e.message) !== 'AUTH') body.innerHTML = '<div class="card">No connection. Past counts need signal.</div>';
+  }
 }
 function onhandHtml(){
   const zs = zones();
@@ -793,7 +906,7 @@ function onhandHtml(){
   zs.forEach(z => html += '<th class="n">' + esc(z.Name.split(' ')[0]) + '</th>');
   html += '<th class="n">Total</th></tr>';
   categoriesInOrder(products()).forEach(cat => {
-    html += '<tr><td colspan="' + (zs.length + 2) + '" style="background:#fafaf7;font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted)">' + esc(cat) + '</td></tr>';
+    html += '<tr><td colspan="' + (zs.length + 2) + '" style="background:#12110f;font-weight:700;font-size:12px;text-transform:uppercase;color:var(--muted)">' + esc(cat) + '</td></tr>';
     products().filter(p => (p.Category||'Other') === cat).forEach(p => {
       let total = 0; let cells = '';
       zs.forEach(z => { const q = localQty(p.ProductID, z.ZoneID); total += (q || 0); cells += '<td class="n">' + (q === null ? '–' : fmtQty(q)) + '</td>'; });
@@ -825,40 +938,6 @@ function usageHtml(r){
       '<td class="n">' + fmtQty(row.current) + '</td><td class="n"><b>' + fmtQty(row.usage) + '</b></td></tr>';
   });
   return html + '</table></div><p class="small muted">“check” = negative usage: a delivery was never logged or a count was off.</p>';
-}
-function orderHtml(){
-  const withPar = [], noPar = [];
-  products().forEach(p => {
-    const par = Number(p.Par);
-    if (isFinite(par) && par > 0) withPar.push(p); else noPar.push(p);
-  });
-  if (!withPar.length) return '<div class="card">No pars set yet. After a couple of real counts, set pars in Products and the order sheet builds itself.</div>';
-  const byDist = {};
-  withPar.forEach(p => {
-    let onhand = 0; zones().forEach(z => onhand += (localQty(p.ProductID, z.ZoneID) || 0));
-    const need = Math.round((Number(p.Par) - onhand) * 100) / 100;
-    if (need <= 0) return;
-    const d = p.Distributor || 'No distributor set';
-    (byDist[d] = byDist[d] || []).push({ name: p.Name, need: need, unit: p.Unit || '' });
-  });
-  const dists = Object.keys(byDist).sort();
-  if (!dists.length) return '<div class="card">Everything with a par is at or above it. Nothing to order. 🎉</div>';
-  let html = '', text = 'Bon Sake bar order, ' + new Date().toLocaleDateString() + '\n';
-  dists.forEach(d => {
-    html += '<div class="card"><b>' + esc(d) + '</b>';
-    text += '\n' + d + '\n';
-    byDist[d].forEach(i => { html += '<div class="listline"><span>' + esc(i.name) + '</span><span><b>' + fmtQty(i.need) + '</b> ' + esc(i.unit) + '</span></div>'; text += '  ' + i.name + ': ' + fmtQty(i.need) + ' ' + i.unit + '\n'; });
-    html += '</div>';
-  });
-  window.__orderText = text;
-  html += '<button class="primary" onclick="copyOrder()">Copy as text</button>';
-  if (noPar.length) html += '<p class="small muted" style="margin-top:10px">' + noPar.length + ' product(s) have no par set and are not on this sheet.</p>';
-  return html;
-}
-function copyOrder(){
-  const text = window.__orderText || '';
-  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(()=>toast('Copied ✓'), ()=>fallbackCopy(text));
-  else fallbackCopy(text);
 }
 function fallbackCopy(text){
   const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
@@ -907,25 +986,107 @@ function renderCloseout(){
   html += '<div class="tscroll"><table><tr><th>Item</th><th class="n">Last</th><th class="n">Now</th><th class="n">Change</th></tr>' + (rows || '<tr><td colspan="4" class="muted">Nothing entered this count yet.</td></tr>') + '</table></div>';
   if (untouchedRows) html += '<h2 class="sec" style="font-size:15px;margin-top:16px">Had stock last count, not updated this time</h2><div class="tscroll"><table><tr><th>Item</th><th class="n">Last</th><th class="n">Now</th><th class="n">Change</th></tr>' + untouchedRows + '</table></div>';
   html += '<div class="field" style="margin-top:14px"><label>Note (optional)</label><input id="co-notes" placeholder="e.g. pre-weekend count"></div>';
-  html += '<button class="primary" onclick="finishCount(false)">Finish count</button>';
-  html += '<p class="small muted" style="margin-top:8px">Finishing freezes today’s numbers as count-on-record. Needs signal.</p>';
+  html += '<button class="primary" onclick="finishCount(false)">Build the order</button>';
+  html += '<p class="small muted" style="margin-top:8px">This saves the count to Past, builds the order from your pars, and clears every count for the next inventory. Needs signal.</p>';
   return html;
+}
+// Order line: what to buy = par minus everything counted, all zones combined
+// (counted 5, par 7, order 2). Only products with a par can make the order.
+function buildOrderGroups(countsMap){
+  const totals = {};
+  Object.keys(countsMap).forEach(function(key){
+    const pid = key.split('|')[0];
+    totals[pid] = (totals[pid] || 0) + (Number(countsMap[key].qty) || 0);
+  });
+  const emailByName = {};
+  const idByName = {};
+  ((S.boot && S.boot.distributors) || []).forEach(function(d){
+    const key = String(d.Name).trim().toLowerCase();
+    emailByName[key] = String(d.Email || '').trim();
+    idByName[key] = d.DistributorID;
+  });
+  const groups = {};
+  let noPar = 0;
+  products().forEach(function(p){
+    const par = Number(p.Par);
+    if (!isFinite(par) || par <= 0) { noPar++; return; }
+    const need = Math.round((par - (totals[p.ProductID] || 0)) * 100) / 100;
+    if (need <= 0) return;
+    const dist = String(p.Distributor || '').trim() || 'No distributor set';
+    (groups[dist] = groups[dist] || { name: dist, email: emailByName[dist.toLowerCase()] || '', distributorId: idByName[dist.toLowerCase()] || '', items: [] })
+      .items.push({ name: p.Name, need: need, unit: p.Unit || '' });
+  });
+  return {
+    groups: Object.keys(groups).sort().map(function(k){ return groups[k]; }),
+    noPar: noPar
+  };
 }
 async function finishCount(force){
   if (S.outbox.length) { render(); return; }
   try {
     const r = await apiPost('finishCount', { notes: ($('co-notes') && $('co-notes').value.trim()) || '', force: !!force });
     if (r && r.ok) {
+      // Build the order from the counts BEFORE clearing them; the snapshot
+      // on the server is the permanent copy of the same numbers.
+      const built = buildOrderGroups(S.counts);
+      S.lastOrder = { snapshotId: r.snapshotId, when: nowIso(), groups: built.groups, noPar: built.noPar };
+      lsSet(LS.lastOrder, S.lastOrder);
+      S.counts = {}; lsSet(LS.counts, S.counts);
       S.countStartedAt = null; lsDel(LS.started);
-      toast('Count #' + r.snapshotId + ' saved ✓', 3200);
-      await refreshBoot(false);
-      S.view = 'home'; S.backStack = []; render();
+      toast('Count #' + r.snapshotId + ' saved. Counts reset for next time.', 3400);
+      refreshBoot(false);
+      S.view = 'order'; S.backStack = ['home']; render();
     } else if (r && /already closed out/.test(String(r.error || ''))) {
       openModal('<h2 class="sec">Close out again?</h2><p class="small">' + esc(r.error) + '</p>' +
         '<button class="primary" onclick="closeModal();finishCount(true)">Yes, close out again</button>' +
         '<button class="ghost" style="margin-top:8px" onclick="closeModal()">Cancel</button>');
     } else toast((r && r.error) || 'Could not finish', 4200);
-  } catch(e) { offlineToast(e, 'No connection. Finishing a count needs signal.'); }
+  } catch(e) { offlineToast(e, 'No connection. Building the order needs signal.'); }
+}
+
+/* ---------------- Order ---------------- */
+function orderGroupText(group){
+  let text = 'Bon Sake order, ' + new Date().toLocaleDateString() + '\n' + group.name + '\n\n';
+  group.items.forEach(function(i){ text += i.need + ' ' + (i.unit || '') + '  ' + i.name + '\n'; });
+  return text;
+}
+function orderMailto(group){
+  const subject = 'Bon Sake order ' + new Date().toLocaleDateString();
+  const body = 'Hello,\n\nHere is the Bon Sake order:\n\n' +
+    group.items.map(function(i){ return i.need + ' ' + (i.unit || '') + '  ' + i.name; }).join('\n') +
+    '\n\nThank you,\n' + myName() + '\nBon Sake Sushi & Bar';
+  return 'mailto:' + encodeURIComponent(group.email) + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+}
+function renderOrder(){
+  const o = S.lastOrder;
+  if (!o) return '<div class="card">No order built yet. Count, then tap Build the order.</div>';
+  let html = '<p class="small muted">Built from count #' + esc(String(o.snapshotId)) + ', ' +
+    esc(new Date(o.when).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})) + '. Amounts are par minus counted.</p>';
+  if (!o.groups.length) {
+    html += '<div class="card"><b>Everything with a par is at or above it.</b><div class="small muted">Nothing to order this cycle.</div></div>';
+  }
+  o.groups.forEach(function(g, gi){
+    html += '<div class="card"><b>' + esc(g.name) + '</b>';
+    g.items.forEach(function(i){
+      html += '<div class="listline"><span>' + esc(i.name) + '</span><span><b>' + fmtQty(i.need) + '</b> ' + esc(i.unit) + '</span></div>';
+    });
+    html += '<div class="row2" style="margin-top:10px">' +
+      '<button class="ghost" onclick="copyOrderGroup(' + gi + ')">Copy</button>' +
+      (g.email
+        ? '<a class="primary" style="text-align:center;text-decoration:none;display:block" href="' + orderMailto(g) + '">Email order</a>'
+        : '<button class="ghost" style="color:var(--warn)" onclick="' + (g.distributorId ? 'openEditDistributor(\'' + esc(g.distributorId) + '\')' : 'openAddDistributor(\'' + esc(g.name) + '\')') + '">Add email to send</button>') +
+      '</div></div>';
+  });
+  if (o.noPar) html += '<p class="small muted">' + o.noPar + ' product(s) have no par and are never ordered automatically. Set pars in Products.</p>';
+  html += '<button class="ghost" style="margin-top:6px" onclick="go(\'home\')">Done</button>';
+  return html;
+}
+function copyOrderGroup(gi){
+  const g = S.lastOrder && S.lastOrder.groups[gi];
+  if (!g) return;
+  const text = orderGroupText(g);
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(()=>toast('Copied ✓'), ()=>fallbackCopy(text));
+  else fallbackCopy(text);
 }
 
 /* ---------------- Modal + banners ---------------- */
@@ -977,7 +1138,7 @@ const DEMO_DB = (function(){
   };
   const products = []; let n = 0;
   Object.keys(cats).forEach(cat => cats[cat].forEach(name => {
-    n++; products.push({ ProductID:'P'+String(n).padStart(3,'0'), Department:'Bar', Category:cat, Name:name, Unit: cat==='Supplies'?'ea':'btl',
+    n++; products.push({ ProductID:'P'+String(n).padStart(3,'0'), Department:'Bar', Category:cat, Name:name, Unit: cat==='Supplies'?'ea':(cat==='Beer'?'cs':'btl'),
                          PurchaseUnit:'', PackSize:'', Par: (n%3===0? n%7+2 : ''), Price:'', Distributor: n%2 ? 'Republic' : 'Southern Glazer’s', Notes:'', Active:'Y', SortOrder:'' });
   }));
   const zonesRows = [ {ZoneID:'Z1',Name:'Behind the Bar',Department:'Bar',SortOrder:1,Active:'Y'}, {ZoneID:'Z2',Name:'Back Room Storage',Department:'Bar',SortOrder:2,Active:'Y'} ];
@@ -989,7 +1150,11 @@ const DEMO_DB = (function(){
     lastLines.push({ SnapshotID:1, ProductID:p.ProductID, ZoneID:'Z1', Qty:q1 });
     lastLines.push({ SnapshotID:1, ProductID:p.ProductID, ZoneID:'Z2', Qty:q2 });
   });
-  return { products: products, zones: zonesRows, counts: counts,
+  const distributors = [
+    { DistributorID:'D1', Name:'Republic', Email:'rep@republic.example', Active:'Y' },
+    { DistributorID:'D2', Name:'Southern Glazer’s', Email:'', Active:'Y' }
+  ];
+  return { products: products, zones: zonesRows, counts: counts, distributors: distributors,
            snapshots: [{ SnapshotID:1, StartedAt:'2026-09-08T18:00:00Z', FinishedAt:'2026-09-08T20:30:00Z', Status:'closed', By:'Zach Landon', Notes:'demo' }],
            deliveries: [{ DeliveryID:1, Date:'2026-09-10T15:00:00Z', Vendor:'Republic', InvoiceNo:'', By:'Zach Landon', Note:'' }],
            deliveryLines: [{ DeliveryID:1, ProductID:'P001', Qty:24, UnitCost:'', Note:'' }],
@@ -1004,6 +1169,23 @@ function demoApi_(action, data){
     return { success:false, ok:false };
   }
   if (action === 'boot') return Object.assign({ ok:true }, db);
+  if (action === 'snapshot') {
+    const snap = db.snapshots.find(s => String(s.SnapshotID) === String(data.id));
+    if (!snap) return { ok:false, error:'Count not found' };
+    return { ok:true, snapshot: snap, lines: db.lastSnapshotLines.filter(l => String(l.SnapshotID) === String(data.id)) };
+  }
+  if (action === 'addDistributor') {
+    const id = 'D' + (db.distributors.length + 1);
+    db.distributors.push({ DistributorID:id, Name:data.name, Email:data.email || '', Active:'Y' });
+    return { ok:true, distributorId:id };
+  }
+  if (action === 'updateDistributor') {
+    const d = db.distributors.find(x => x.DistributorID === data.distributorId);
+    if (!d) return { ok:false, error:'Distributor not found' };
+    if (data.name !== undefined) d.Name = data.name;
+    if (data.email !== undefined) d.Email = data.email;
+    return { ok:true };
+  }
   if (action === 'report') return { ready:false, message:'Demo mode. Usage appears after two real counts.' };
   if (action === 'setCounts') {
     (data.entries || []).forEach(e => {
@@ -1060,6 +1242,7 @@ function demoApi_(action, data){
     const id = db.snapshots.length + 1;
     db.lastSnapshotLines = db.counts.map(c => ({ SnapshotID:id, ProductID:c.ProductID, ZoneID:c.ZoneID, Qty:c.Qty }));
     db.snapshots.push({ SnapshotID:id, StartedAt:nowIso(), FinishedAt:nowIso(), Status:'closed', By:'Zach Landon', Notes:data.notes || '' });
+    db.counts = [];
     return { ok:true, snapshotId:id };
   }
   if (action === 'logError') return { ok:true };

@@ -1,7 +1,7 @@
 {
   "name": "Bon Sake",
   "short_name": "Bon Sake",
-  "description": "Staff training and testing app for Bon Sake Sushi & Bar",
+  "description": "Staff app for Bon Sake Sushi & Bar: training, duties, and bar inventory",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0A0A0A",

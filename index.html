@@ -148,7 +148,7 @@
     </form>
     <p class="text-center text-muted text-xs mt-6">First shift? Use the starter PIN your manager gave you.</p>
     <p class="text-center text-muted text-xs mt-1">Forgot your PIN? See your manager.</p>
-    <p id="verLine" class="text-center text-line text-xs mt-3">app v23</p>
+    <p id="verLine" class="text-center text-line text-xs mt-3"></p>
   </div>
 </section>
 
@@ -209,6 +209,7 @@
       <button data-tab="test"     onclick="switchTab('test')"     class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">✏️</span><span class="block">Test</span></button>
       <button data-tab="progress" onclick="switchTab('progress')" class="tabBtn flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">📊</span><span class="block">Progress</span></button>
       <button data-tab="team"     onclick="switchTab('team')"     class="tabBtn hidden flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">👥</span><span class="block">Team</span></button>
+      <button data-tab="inventory" onclick="location.href='/inventory.html'" class="tabBtn hidden flex-1 pt-2 pb-1.5 text-xs font-medium border-t-2 border-transparent text-muted transition-colors"><span class="block text-2xl leading-none mb-0.5" aria-hidden="true">🍶</span><span class="block">Inventory</span></button>
     </div>
   </nav>
 
@@ -279,9 +280,6 @@ const API_URL = "https://script.google.com/macros/s/AKfycbxUzbB0Er0K64zjXiNxt-8F
 
 // ---- Tunable settings -----------------------------------------------------
 const APP_VERSION = 32;           // shown on the login screen; bump with each release
-const MAX_ROLL_QUESTIONS = 20;   // cap per roll-component test (keeps "Full Menu" sane)
-const WORDBANK_SIZE      = 20;   // Level 2 word bank: true ingredients + fillers, capped here
-const DESC_QUESTIONS     = 15;   // Description Recall question count
 const ALLERGEN_QUESTIONS = 15;   // Allergen Awareness question count
 const PASS_DEFAULT       = 80;   // standard pass %
 const PASS_ALLERGEN      = 90;   // allergens are safety-critical
@@ -305,8 +303,6 @@ const S = {
   dutyLists: [],         // Duty Checklists rows: { list, order, task, days }
   duty: null,            // active checklist run
   manual: null,          // trainee manual from the four Manual sheet tabs (null until served)
-  closeoutQs: [],        // end-of-day questions (editable in the sheet)
-  trainerQs: [],         // trainer sign-off questions (editable in the sheet)
   training: { view: 'path', phase: null, shift: null, sop: null, check: null, back: null, shiftClosing: 0 },
   dishNotes: {},         // this user's tasting notes: { item_id: { chips:[], pitch:'' } }
   test:  null            // active test object
@@ -700,7 +696,9 @@ window.addEventListener('DOMContentLoaded', () => {
   $('loginForm').addEventListener('submit', handleLogin);
   $('antiCheatStart').addEventListener('click', beginTestAfterModal);
   // Version stamp for support: "app vX · server vY" on the login screen.
-  // The ping also warms up the backend so the first real request is faster.
+  // The app half renders even offline; the server half arrives with the ping,
+  // which also warms up the backend so the first real request is faster.
+  $('verLine').textContent = 'app v' + APP_VERSION;
   apiGet('ping').then(r => {
     const el = $('verLine');
     if(el && r && r.version) el.textContent = 'app v' + APP_VERSION + ' · server v' + r.version;
@@ -877,8 +875,6 @@ function applyMenuPayload(m){
   S.layout = m.layout || [];
   S.manual = m.manual || null;
   S.dutyLists  = m.dutyLists  || [];
-  S.closeoutQs = m.closeoutQuestions || [];
-  S.trainerQs  = m.trainerQuestions  || [];
   S.drinksAvailable = !!m.drinksAvailable;
   S.pairingsAvailable = !!m.pairingsAvailable;
   canonicalizeMenu();        // collapse plural-duplicate ingredients before anything reads them
@@ -1028,6 +1024,13 @@ function enterApp(opts){
 function updateTeamTabVisibility(){
   const btn = document.querySelector('.tabBtn[data-tab="team"]');
   if(btn) btn.classList.toggle('hidden', !isManager());
+  // Inventory is a separate page (/inventory.html), not a tab. The names
+  // below mirror the inventory backend's inventory_users Config — the
+  // backend is the real gate; update both together when adding someone.
+  const INVENTORY_USERS = ['zach landon'];
+  const me = S.user ? (String(S.user.first_name || '').trim() + ' ' + String(S.user.last_name || '').trim()).toLowerCase() : '';
+  const inv = document.querySelector('.tabBtn[data-tab="inventory"]');
+  if(inv) inv.classList.toggle('hidden', !(isManager() || INVENTORY_USERS.indexOf(me) !== -1));
 }
 
 // The Training tab only exists for people in training (manager-designated via
@@ -1331,7 +1334,7 @@ function renderStudyCats(pane){
     const n = (sec === 'Menu Terms') ? flashcards().length : sectionItems(sec).length;
     if(n === 0) return '';
     const sub = (sec === 'Menu Terms') ? `${n} terms` : `${n} item${n===1?'':'s'}`;
-    return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
+    return `<button onclick="selectSection('${esc(sec.replace(/'/g,"\\'"))}')"
       class="bg-surface border border-line rounded-xl px-3 py-6 text-center hover:border-gold transition-colors">
       <p class="text-text font-medium text-base leading-snug">${sectionCardLabel(sec)}</p>
       <p class="text-muted text-xs mt-1.5">${sub}</p>
@@ -1380,7 +1383,7 @@ function renderWineTypes(){
   const cards = wineTypes().map(t => {
     const sec = 'Wines — ' + t;
     const n = S.menu.filter(it => it.section === sec).length;
-    return `<button onclick="selectSection('${esc(sec).replace(/'/g,"\\'")}')"
+    return `<button onclick="selectSection('${esc(sec.replace(/'/g,"\\'"))}')"
       class="bg-surface border border-line rounded-xl px-3 py-6 text-center hover:border-gold transition-colors ${n?'':'opacity-70'}">
       <p class="text-text font-medium text-base leading-snug">${esc(t)}</p>
       <p class="text-muted text-xs mt-1.5">${n ? n + ' wine' + (n===1?'':'s') : 'Coming soon'}</p>
@@ -1581,21 +1584,6 @@ function renderItemDetail(id){
 // Tasting notes ("Your Words") were retired in v24: Rodney's descriptions
 // replaced the house pitch, and the per-server chips UI went with it. The
 // backend endpoints still exist for older app versions.
-
-function photoPlaceholder(){
-  return `<div class="w-full h-52 rounded-lg border border-dashed border-line bg-bg flex flex-col items-center justify-center text-center px-4">
-    <svg class="w-8 h-8 text-line mb-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3.2"/><path d="M8 5l1.2-2h5.6L16 5"/></svg>
-    <p class="text-muted text-xs">Photo coming soon. Add an image URL to the Google Sheet.</p>
-  </div>`;
-}
-function photoPlaceholderEl(){ const d=document.createElement('div'); d.innerHTML=photoPlaceholder(); return d.firstElementChild; }
-
-function comingSoonBlock(label){
-  return `<div class="bg-surface border border-line rounded-xl p-10 text-center mt-6">
-    <p class="font-display text-2xl text-gold mb-2">${esc(label)}: Coming Soon</p>
-    <p class="text-muted text-sm">This section isn't loaded yet. Once ${esc(label.toLowerCase())} are added to the Google Sheet, they'll appear here automatically.</p>
-  </div>`;
-}
 
 /* ---- Know the Menu flashcards (Study) ------------------------------------ */
 let fcIndex = 0;
@@ -1832,7 +1820,7 @@ function renderDuties(){
   const cards = jobLists.map(n => {
     const count = dutyTasksFor(n).length;
     const on = _dutyLists.indexOf(n) !== -1;
-    return `<button onclick="dutyToggleList('${esc(n).replace(/'/g,"\\'")}')"
+    return `<button onclick="dutyToggleList('${esc(n.replace(/'/g,"\\'"))}')"
       class="rounded-2xl px-4 py-8 text-center transition-colors border ${on?'border-gold bg-gold/10':'border-line bg-surface hover:border-gold'}">
       <span class="block font-display text-xl text-text leading-snug">${on?'✓ ':''}${esc(n)}</span>
       <span class="block text-muted text-xs uppercase tracking-wider mt-2">${count} task${count===1?'':'s'} today</span>
@@ -1883,7 +1871,7 @@ function renderDutyTeamPicker(){
   }
   const chips = others.map(n => {
     const on = _dutyParticipants.indexOf(n) !== -1;
-    return `<button onclick="dutyToggleMate('${esc(n).replace(/'/g,"\\'")}')"
+    return `<button onclick="dutyToggleMate('${esc(n.replace(/'/g,"\\'"))}')"
       class="rounded-full px-4 py-2 text-sm border transition-colors mr-2 mb-2 ${on?'border-gold bg-gold text-bg font-semibold':'border-line bg-surface text-text'}">${on?'✓ ':''}${esc(n)}</button>`;
   }).join('');
   $('tab-duties').innerHTML = `
@@ -3601,7 +3589,7 @@ function renderFloor(){
     <h2 class="font-display text-2xl text-text mb-2">${esc(room)}</h2>
     <div class="mb-2">${pills}</div>
     ${renderRoomMap(room)}
-    <button onclick="startTableTest('${esc(room).replace(/'/g,"\\'")}')"
+    <button onclick="startTableTest('${esc(room.replace(/'/g,"\\'"))}')"
       class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg" style="max-width:520px;margin-left:auto;margin-right:auto;display:block;">Test Me on ${esc(room)} →</button>`;
 }
 function selectFloorRoom(i){ S.floorBrowse.room = floorRooms()[i] || null; renderFloor(); }
@@ -3691,9 +3679,6 @@ function lastResultFor(section, level){
   if(!matches.length) return null;
   return matches.sort((a,b) => new Date(b.date_taken) - new Date(a.date_taken))[0];
 }
-function level2Unlocked(section){
-  return S.results.some(r => r.test_section === section && Number(r.test_level)===1 && String(r.pass_fail).toUpperCase()==='PASS' && Number(r.score_percent)>=80);
-}
 
 /* ---- Expiry clock (config-driven "ongoing education") --------------------
    Each test type gets a shelf life in months from the Config sheet.
@@ -3768,9 +3753,8 @@ function categoryMastery(section){
   return { mastered: dishes.filter(it => mastered.has(String(it.item_id))).length, total: dishes.length };
 }
 
-function trackSection(track){ return track.type==='roll' ? (track.section==='*ALL*' ? 'Full Menu' : track.section) : trackResultSection(track); }
 function trackResultSection(track){
-  return { know:'Menu Terms', allergen:'Allergen Awareness', description:'Description Recall', upsell:'Upsell Test', beers:'Beer List' }[track.type] || track.name;
+  return { know:'Menu Terms', allergen:'Allergen Awareness', upsell:'Upsell Test', beers:'Beer List' }[track.type] || track.name;
 }
 
 let testCats = [];   // categories currently shown in the dish-by-dish browser
@@ -3818,7 +3802,7 @@ function renderTestHome(){
       return `<div class="bg-bg border border-line rounded-xl p-4">
         <p class="text-text font-medium leading-tight">${esc(r)}</p>
         <p class="text-xs mt-1 ${passed?'text-pass':'text-muted'}">${passed?'Passed ✓':(roomTestables(r).length + ' tables')}</p>
-        <button onclick="startTableTest('${esc(r).replace(/'/g,"\\'")}')"
+        <button onclick="startTableTest('${esc(r.replace(/'/g,"\\'"))}')"
           class="mt-3 w-full ${passed?'border border-gold text-gold':'bg-gold text-bg'} text-sm font-semibold py-2 rounded-lg">${passed?'Retake':'Start Test'}</button>
       </div>`;
     }).join('');
@@ -3902,7 +3886,6 @@ function serviceCard(t){
   </div>`;
 }
 
-function lockedMsg(){ appAlert('Pass Level 1 with 80% or higher to unlock this.', 'Not unlocked yet'); }
 function lockedMsg2(){ appAlert('Pass Level 1 for this dish first to unlock Level 2.', 'Not unlocked yet'); }
 
 /* ===========================================================================
@@ -3913,7 +3896,6 @@ let pendingTest = null;  // staged track+level until the anti-cheat modal is con
 function startTest(trackId, level){
   const track = TRACKS.find(t => t.id === trackId);
   if(!track || track.type === 'soon') return;
-  if(track.type === 'roll' && level === 2 && !level2Unlocked(trackSection(track))) return lockedMsg();
   pendingTest = { track, level };
   show($('antiCheatModal'));   // must confirm before first question loads
 }
@@ -4081,10 +4063,10 @@ function beginTestAfterModal(){
   }
 
   const { track, level } = pendingTest;
-  const section = (track.type==='roll') ? trackSection(track) : trackResultSection(track);
+  const section = trackResultSection(track);
   const pass = track.pass || PASS_DEFAULT;
 
-  const questions = buildQuestions(track, level);
+  const questions = buildQuestions(track);
   S.test = {
     track, level, section, pass, testType: track.type,
     questions, idx: 0, correct: 0, wrong: 0,
@@ -4096,33 +4078,7 @@ function beginTestAfterModal(){
   renderQuestion();
 }
 
-// Builds a Level-2 word bank: the item's true ingredients plus filler
-// ingredients pulled from elsewhere on the menu, capped at WORDBANK_SIZE,
-// then sorted alphabetically.
-function buildWordBank(correct){
-  const correctLower = new Set(correct.map(s => s.toLowerCase()));
-  const need = Math.max(0, WORDBANK_SIZE - correct.length);
-  const pool = S.allIngredients.filter(ing => !correctLower.has(ing.toLowerCase()));
-  const bank = correct.concat(sample(pool, need));
-  return bank.sort((a,b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-}
-
-// Roll tests only cover dishes with 2+ ingredients. Single-ingredient items
-// (plain nigiri, hosomaki, seaweed salad, etc.) are excluded everywhere in the
-// Test tab — they make for trivial "select the one ingredient" questions.
-function eligibleRollItems(track){
-  const base = (track.section === '*ALL*') ? S.menu : S.menu.filter(it => it.section === track.section);
-  return base.filter(it => (it.ingredients || []).length >= 2);
-}
-
-function buildQuestions(track, level){
-  if(track.type === 'roll'){
-    let items = shuffle(eligibleRollItems(track)).slice(0, MAX_ROLL_QUESTIONS);
-    if(level === 2){
-      return items.map(it => { const correct = it.ingredients.slice(); return { type:'wordbank', item:it, correct, bank: buildWordBank(correct) }; });
-    }
-    return items.map(it => { const q = buildSelectAll(it); return { type:'selectAll', item:it, options:q.options, correct:q.correct }; });
-  }
+function buildQuestions(track){
   if(track.type === 'beers'){
     // One select-all question: every beer/seltzer we serve, mixed with decoys we don't.
     const served = S.menu.filter(it => it.section === 'Beers & Seltzers').map(it => it.item_name);
@@ -4144,16 +4100,6 @@ function buildQuestions(track, level){
       const distract = sample(flashcards().filter(f => f.term !== card.term), 3).map(f => f.def);
       const options = shuffle([card.def, ...distract]);
       return { type:'mcq', prompt: card.term, sub:'Which definition matches this term?', options, correctIndex: options.indexOf(card.def), fact: card.fact };
-    });
-  }
-  if(track.type === 'description'){
-    const described = S.menu.filter(it => it.sell_description);
-    const chosen = sample(described, Math.min(DESC_QUESTIONS, described.length));
-    return chosen.map(it => {
-      const sameSec = S.menu.filter(x => x.section === it.section && x.item_id !== it.item_id);
-      const distract = sample(sameSec, 3).map(x => x.item_name);
-      const options = shuffle([it.item_name, ...distract]);
-      return { type:'mcq', prompt: it.sell_description, sub:'Which menu item is this describing?', options, correctIndex: options.indexOf(it.item_name), item: it };
     });
   }
   if(track.type === 'upsell'){
@@ -4179,7 +4125,7 @@ function renderQuestion(){
   const header = `
     <div class="mb-4">
       <div class="flex items-center justify-between text-xs">
-        <span class="text-gold uppercase tracking-wider">${esc(t.section)}${(t.track.type==='roll'||t.track.type==='dish') ? ' · Level ' + t.level : ''}</span>
+        <span class="text-gold uppercase tracking-wider">${esc(t.section)}${t.track.type==='dish' ? ' · Level ' + t.level : ''}</span>
         <span class="text-muted">Question ${t.idx+1} of ${t.questions.length}</span>
       </div>
       <div class="h-1.5 bg-line rounded-full mt-2 overflow-hidden"><div class="h-full bg-gold transition-all" style="width:${pct}%"></div></div>
@@ -4191,13 +4137,11 @@ function renderQuestion(){
 
   let bodyHtml = '';
   if(q.type === 'selectAll' || q.type === 'allergen') bodyHtml = renderSelectAll(q);
-  else if(q.type === 'wordbank')                      bodyHtml = renderWordBank(q);
   else if(q.type === 'recall')                        bodyHtml = renderRecall(q);
   else if(q.type === 'tableplace')                    bodyHtml = renderTablePlace(q);
   else if(q.type === 'mcq')                           bodyHtml = renderMCQ(q);
 
   $('tab-test').innerHTML = `<div class="max-w-2xl mx-auto">${header}<div id="qBody" class="fade-in">${bodyHtml}</div></div>`;
-  if(q.type === 'wordbank') wbAfterRender(q);
   if(q.type === 'recall'){ const ri = $('rcInput'); if(ri) ri.focus(); }
 }
 
@@ -4286,72 +4230,7 @@ function saGlow(btn, color){
   }
 }
 
-/* ---- Word bank (roll Level 2) -------------------------------------------- */
-function renderWordBank(q){
-  const it = q.item;
-  const photo = it.photo_url ? `<img src="${esc(it.photo_url)}" class="w-full h-40 object-cover rounded-lg border border-line mb-3" onerror="this.remove()"/>` : '';
-  const slots = q.correct.map((_,i) => `<div data-slot="${i}" onclick="wbClearSlot(${i})" class="wbSlot min-h-[42px] rounded-lg border border-dashed border-line bg-bg flex items-center justify-center px-2 text-sm text-muted"></div>`).join('');
-  const bank = q.bank.map(ing => `<button data-ing="${esc(ing)}" onclick="wbPlace(this)" class="wbChip bg-chip border border-line rounded-full px-3 py-1.5 text-sm text-text mr-1.5 mb-1.5">${esc(ing)}</button>`).join('');
-  return `
-    ${photo}
-    <p class="text-xs uppercase tracking-wider text-golddim">${esc(it.section)}</p>
-    <h3 class="font-display text-2xl text-text mt-1 mb-1">${esc(it.item_name)}</h3>
-    <p class="text-sm text-muted mb-3">Fill in all ${q.correct.length} ingredient${q.correct.length>1?'s':''} from the word bank. Tap a filled slot to clear it.</p>
-    <div class="grid grid-cols-2 gap-2 mb-4">${slots}</div>
-    <div id="wbResult" class="mb-3"></div>
-    <p class="text-xs uppercase tracking-wider text-golddim mb-2">Word Bank</p>
-    <div id="wbBank" class="flex flex-wrap max-h-56 overflow-y-auto no-scrollbar border border-line rounded-lg p-2">${bank}</div>
-    <button id="wbSubmit" onclick="submitWordBank()" class="mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg opacity-40 pointer-events-none">Submit Answer</button>
-    <button id="wbNext" onclick="nextQuestion()" class="hidden mt-4 w-full bg-gold text-bg font-semibold py-3 rounded-lg">Next Question →</button>`;
-}
-function wbAfterRender(q){ /* slots start empty */ }
-function wbPlace(chip){
-  if(S.test.answered) return;
-  const empty = Array.from(document.querySelectorAll('.wbSlot')).find(s => !s.dataset.filled);
-  if(!empty) return;
-  empty.textContent = chip.dataset.ing;
-  empty.dataset.filled = chip.dataset.ing;
-  empty.classList.remove('border-dashed','text-muted'); empty.classList.add('text-text','border-gold');
-  chip.classList.add('hidden');
-  wbCheckFull();
-}
-function wbClearSlot(i){
-  if(S.test.answered) return;
-  const slot = document.querySelector(`.wbSlot[data-slot="${i}"]`);
-  if(!slot || !slot.dataset.filled) return;
-  const ing = slot.dataset.filled;
-  const chip = document.querySelector(`#wbBank .wbChip[data-ing="${cssEscape(ing)}"]`);
-  if(chip) chip.classList.remove('hidden');
-  slot.textContent=''; slot.removeAttribute('data-filled');
-  slot.classList.add('border-dashed','text-muted'); slot.classList.remove('text-text','border-gold');
-  slot.style.borderColor=''; slot.style.background='';
-  wbCheckFull();
-}
 function cssEscape(s){ return String(s).replace(/["\\]/g,'\\$&'); }
-function wbCheckFull(){
-  const all = Array.from(document.querySelectorAll('.wbSlot')).every(s => s.dataset.filled);
-  const sub = $('wbSubmit');
-  sub.classList.toggle('opacity-40', !all); sub.classList.toggle('pointer-events-none', !all);
-}
-function submitWordBank(){
-  const t = S.test; if(t.answered) return; t.answered = true;
-  const q = t.questions[t.idx];
-  const correct = new Set(q.correct.map(s => s.toLowerCase()));
-  let allRight = true;
-  document.querySelectorAll('.wbSlot').forEach(slot => {
-    const val = (slot.dataset.filled||'').toLowerCase();
-    // ✓/✗ marks alongside the colors so the result reads without color vision.
-    if(correct.has(val)){ slot.style.borderColor='#27AE60'; slot.style.background='rgba(39,174,96,0.12)'; slot.innerHTML = '✓ ' + slot.innerHTML; }
-    else { slot.style.borderColor='#C0392B'; slot.style.background='rgba(192,57,43,0.12)'; slot.innerHTML = '✗ ' + slot.innerHTML; allRight=false; }
-  });
-  if(!allRight){
-    const chosen = new Set(Array.from(document.querySelectorAll('.wbSlot')).map(s => (s.dataset.filled||'').toLowerCase()));
-    const missing = q.correct.filter(c => !chosen.has(c.toLowerCase()));
-    if(missing.length) $('wbResult').innerHTML = `<p class="text-sm text-fail">Missing: ${esc(missing.join(', '))}</p>`;
-  }
-  gradeAndReveal(allRight, q.item, 'wbResult');
-  $('wbSubmit').classList.add('hidden'); readyNext('wbNext');
-}
 
 /* ---- Free recall (dish Level 2) — type every ingredient from memory ------ */
 function renderRecall(q){
@@ -4470,8 +4349,7 @@ function answerMCQ(i){
 /* ---- Shared grading + reveal (for select-all / word bank) ---------------- */
 function gradeAndReveal(allRight, item, resultElId, note){
   recordOutcome(allRight, item);
-  const q = S.test.questions[S.test.idx];
-  const elId = resultElId || (q.type==='wordbank' ? 'wbResult' : 'saResult');
+  const elId = resultElId || 'saResult';
   const el = $(elId);
   let sell = '';
   if(item && item.sell_description){
@@ -4592,11 +4470,11 @@ async function finishTest(){
       </div>
     </div>` : '';
 
-  const isTiered = (t.track.type==='roll' || t.track.type==='dish');
+  const isTiered = (t.track.type==='dish');
   const levelUp = (isTiered && t.level===1 && passed) ? `<p class="text-pass text-sm mt-2">Level 2 is now unlocked.</p>` : '';
   const l2done  = (t.track.type==='dish' && t.level===2 && passed)
     ? `<p class="text-pass text-sm mt-2">You've mastered the ${esc(t.section)}. It's on your scoreboard now.</p>`
-    : ((t.track.type==='roll' && t.level===2 && passed) ? `<p class="text-pass text-sm mt-2">You've completed both levels for ${esc(t.section)}. Your manager can see your results.</p>` : '');
+    : '';
 
   const msg = passed
     ? `<p class="font-display text-3xl text-pass">You passed.</p>${levelUp}${l2done}`
@@ -4651,7 +4529,7 @@ async function finishTest(){
   $('tab-test').innerHTML = `
     <div class="max-w-md mx-auto text-center fade-in">
       ${saveWarning?`<p class="text-fail text-xs mb-3">${esc(saveWarning)}</p>`:''}
-      <p class="text-xs uppercase tracking-wider text-golddim">${esc(t.section)}${(t.track.type==='roll'||t.track.type==='dish')?' · Level '+t.level:''}</p>
+      <p class="text-xs uppercase tracking-wider text-golddim">${esc(t.section)}${t.track.type==='dish'?' · Level '+t.level:''}</p>
       <div class="my-5">
         <p class="font-display text-6xl text-gold">${pct}%</p>
         <p class="text-muted text-sm mt-1">${t.correct} out of ${total} correct</p>
@@ -5014,7 +4892,7 @@ function dutyEditorHtml(){
   const names = dutyListNames();
   if(!names.length) return `<p class="text-muted text-sm">No checklists in the sheet yet.</p>`;
   return `<div class="flex flex-wrap gap-2">${names.map(n =>
-    `<button onclick="dutyEditOpen('${esc(n).replace(/'/g,"\\'")}')" class="text-sm border border-line hover:border-gold text-text rounded-lg px-4 py-2.5 transition-colors">${esc(n)}</button>`).join('')}</div>`;
+    `<button onclick="dutyEditOpen('${esc(n.replace(/'/g,"\\'"))}')" class="text-sm border border-line hover:border-gold text-text rounded-lg px-4 py-2.5 transition-colors">${esc(n)}</button>`).join('')}</div>`;
 }
 function dutyEditorRedraw(){ const box = $('dutyEditorBox'); if(box) box.innerHTML = dutyEditorHtml(); }
 
@@ -5227,7 +5105,8 @@ function drawTeamProgress(d){
     const name = (x.first_name+' '+x.last_name).trim();
     if(!agg[name]) agg[name] = { tests:0, sum:0, mastered:new Set(), rooms:new Set() };
     agg[name].tests++; agg[name].sum += Number(x.score_percent||0);
-    const passed = String(x.pass_fail).toUpperCase()==='PASS';
+    // Same expiry clock as each person's own view: a lapsed pass is not a pass.
+    const passed = String(x.pass_fail).toUpperCase()==='PASS' && resultValid(x);
     if(String(x.test_type||'')==='dish' && Number(x.test_level)===2 && passed && x.item_id)
       agg[name].mastered.add(String(x.item_id));
     if(String(x.test_type||'')==='tables' && passed && x.item_id)

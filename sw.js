@@ -14,7 +14,7 @@
 //
 // Bump CACHE_NAME on every release that changes cached files.
 
-const CACHE_NAME = 'bonsake-v32';
+const CACHE_NAME = 'bonsake-v33';
 const SHELL = [
   '/',
   '/styles.css',
@@ -24,10 +24,18 @@ const SHELL = [
   '/icons/icon-maskable-192.png',
   '/icons/icon-maskable-512.png'
 ];
+// Cached best-effort on install: addAll() is all-or-nothing, and the training
+// app's shell must never fail to install because this page is missing from a
+// deploy. (The fetch handler still caches it on first visit either way.)
+const OPTIONAL = ['/inventory.html'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((c) =>
+      c.addAll(SHELL).then(() => Promise.all(OPTIONAL.map((u) =>
+        fetch(u).then((res) => { if (res.ok) return c.put(u, res); }).catch(() => {})
+      )))
+    ).then(() => self.skipWaiting())
   );
 });
 
@@ -49,15 +57,19 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname === '/manifest.json') return;
 
   // Navigations: freshest page wins, cached page saves an offline open.
+  // Each page is cached under its OWN path — with two pages on this origin,
+  // a single shared key would hand the training app the inventory page (or
+  // vice versa) on an offline open.
   if (event.request.mode === 'navigate') {
+    const pageKey = url.pathname === '/inventory.html' ? '/inventory.html' : '/';
     event.respondWith(
       fetch(event.request)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put('/', copy));
+          caches.open(CACHE_NAME).then((c) => c.put(pageKey, copy));
           return res;
         })
-        .catch(() => caches.match('/'))
+        .catch(() => caches.match(pageKey))
     );
     return;
   }
